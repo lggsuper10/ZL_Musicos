@@ -4,10 +4,9 @@ import TVAppleScaffold from '@/components/TV/TVAppleScaffold'
 import TVTopTabs from '@/components/TV/TVTopTabs'
 import TVText from '@/components/TV/TVText'
 import TVPosterCard from '@/components/TV/TVPosterCard'
-import TVGlassPanel from '@/components/TV/TVGlassPanel'
 import Focusable from '@/components/TV/Focusable'
 import TVDialog, { type TVDialogRequest } from '@/components/TV/TVDialog'
-import { tvColors, tvSize } from '@/theme/tv'
+import { tvColors, tvFont, tvSize, tvTokens } from '@/theme/tv'
 import { useMyList } from '@/store/list/hook'
 import { removeUserList, getListMusics } from '@/core/list'
 import { LIST_IDS } from '@/config/constant'
@@ -33,9 +32,6 @@ let lastSonglistResultCache: SonglistResult | null = null
 // 所以 key 用固定的 IMPORT_CARD_KEY，不随歌单数量变化。
 const IMPORT_CARD_KEY = '__mylist_import__'
 
-// 面板内边距。抽成常量是为了让「聚焦滚动」的坐标换算与 styles.panel 用同一个值，不会各写一份。
-const PANEL_PADDING = tvSize(28)
-
 function TVMyList({ componentId }: { componentId: string }) {
   const musicInfo = usePlayerMusicInfo()
   const allLists = useMyList()
@@ -47,6 +43,7 @@ function TVMyList({ componentId }: { componentId: string }) {
   // 卡片带歌曲数：自动命名的歌单名几乎一样，没数量分不出哪张是哪张（09-19 实测：加完歌不知道加到哪张了）；
   // 歌单内容/列表结构变化时实时重算，从播放列表加完歌回本页，数量立刻更新
   const [songCounts, setSongCounts] = useState<Record<string, number>>({})
+  const [importFocused, setImportFocused] = useState(false)
   // 卡片封面：取每个歌单第一首歌的专辑图（没有则保持占位图）；「我的收藏」一并计数（09-20 需求）
   const [cardCovers, setCardCovers] = useState<Record<string, string>>({})
   useEffect(() => {
@@ -86,6 +83,15 @@ function TVMyList({ componentId }: { componentId: string }) {
   const activeTabFocus = useRef<FocusNode>(null)
   const getActiveTabHandle = () => (activeTabFocus.current ? findNodeHandle(activeTabFocus.current) : null)
 
+  // 与推荐页（Home）同一套等比缩放：按实测视口高度把标题、卡片、间距整体缩进一屏。
+  // 只认第一次有效测量——顶栏 tab 获得/失去焦点时高度会变，跟着重算会让整页字号跳一下。
+  const [contentHeight, setContentHeight] = useState(0)
+  const contentScale = useMemo(() => {
+    if (!contentHeight) return 1
+    return Math.max(0.5, Math.min(1, contentHeight / tvSize(680)))
+  }, [contentHeight])
+  const z = useCallback((value: number) => Math.max(1, Math.round(value * contentScale)), [contentScale])
+
   // ── 「聚焦即滚动」 ──────────────────────────────────────────────
   // 本页 ScrollView 原先没有任何滚动管理：卡片换行到第二排及以后时，整排在屏幕外，
   // 但焦点引擎用 measureInWindow 仍量得到（rect 只是 y 越界）→ 焦点能移过去、用户却看不见。
@@ -95,7 +101,7 @@ function TVMyList({ componentId }: { componentId: string }) {
   const contentScrollRef = useRef<ComponentRef<typeof ScrollView>>(null)
   const scrollYRef = useRef(0) // 当前滚动位移（onScroll，仅写 ref → 不触发重渲染）
   const viewportHRef = useRef(0) // ScrollView 可视高度（onLayout）
-  const panelTopRef = useRef(0) // 面板在「滚动内容」坐标系里的 y（onLayout 挂在 ScrollView 直接子节点）
+  const gridTopRef = useRef(0) // 卡片网格在「滚动内容」坐标系里的 y（onLayout 挂在网格节点上）
   const cardBoxes = useRef<Record<string, { y: number, height: number }>>({})
 
   const recordCardBox = (key: string, y: number, height: number) => {
@@ -111,8 +117,8 @@ function TVMyList({ componentId }: { componentId: string }) {
     const viewport = viewportHRef.current
     if (!scroller || !box || viewport <= 0) return
     const margin = tvSize(12)
-    // 卡片是 grid 的直接子节点，onLayout.y 相对 grid；grid 又在面板内、距面板顶一个 PANEL_PADDING
-    const rowTop = panelTopRef.current + PANEL_PADDING + box.y
+    // 卡片是 grid 的直接子节点，onLayout.y 相对 grid；grid 自身在滚动内容里的 y 另由 onLayout 记录
+    const rowTop = gridTopRef.current + box.y
     const rowBottom = rowTop + box.height
     const y = scrollYRef.current
     if (rowBottom > y + viewport - margin) {
@@ -215,93 +221,91 @@ function TVMyList({ componentId }: { componentId: string }) {
       {/* 聚焦即滚动：ScrollView 记录滚动位移 / 可视高度，卡片获焦时把它所在的【整排】滚进视野（见上方 revealCardRow） */}
       <ScrollView
         ref={contentScrollRef}
+        style={styles.bodyScroll}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingBottom: z(tvSize(36)) }]}
         scrollEventThrottle={16}
         onScroll={(e) => { scrollYRef.current = e.nativeEvent.contentOffset.y }}
-        onLayout={(e) => { viewportHRef.current = e.nativeEvent.layout.height }}
+        onLayout={(e) => {
+          const height = e.nativeEvent.layout.height
+          viewportHRef.current = height
+          if (height < 120) return
+          setContentHeight(prev => prev || Math.round(height))
+        }}
       >
-        <View style={styles.header}>
-          <TVText variant="pageTitle">{tvText.mySonglists}</TVText>
-          <TVText variant="body" style={styles.subtitle}>{hasLists ? `${userSonglists.length} ${tvText.songlist}` : tvText.emptyMySonglists}</TVText>
-          <TVText variant="caption" color={tvColors.dimText} style={styles.hint}>{tvText.myListHint}</TVText>
+        {/* 版式与排行榜 / 播放列表页一致：无外框、大标题 + 一行说明，内容直接铺在背景上 */}
+        <View style={[styles.header, { marginBottom: z(tvSize(18)) }]}>
+          <TVText variant="pageTitle" style={[styles.title, { fontSize: z(tvTokens.heroTitle), lineHeight: z(tvFont(66)) }]}>{tvText.mySonglists}</TVText>
+          <TVText variant="caption" style={[styles.subtitle, { marginTop: z(tvSize(6)) }]} numberOfLines={1}>
+            {hasLists ? `${userSonglists.length} ${tvText.songlist}` : tvText.emptyMySonglists}
+          </TVText>
         </View>
-        {/* TVGlassPanel 只透传 style/accent、不接受 onLayout，量不到面板在【滚动内容坐标系】里的 y；
-            这里外套一层透明 View 专门取这个 y，作为 revealCardRow 的坐标基准 */}
-        <View onLayout={(e) => { panelTopRef.current = e.nativeEvent.layout.y }}>
-          <TVGlassPanel style={styles.panel}>
-            {/* 注意：这里【不再】按 hasLists 二选一渲染。
-                以前「导入歌单」入口只长在空态卡上，一旦导入成功第一张歌单，hasLists 变 true，
-                整张空态卡（连同 onPress → 扫码页）就被卸载了，页面上再也没有第二次导入的入口 ——
-                这就是「歌单只能导入一个，想导入第二个没反应」的直接原因。
-
-                入口卡【保持与歌单卡同一排】的方形卡（而不是独占整行的横幅）：
-                焦点可达性已由 tvFocusManager 的「同带优先」独立解决
-                （见 focus_geometry_sim.js 实验 L：现状引擎 112 组不可达 → 同带优先 0 组），
-                不需要再靠「改布局」兜底；横幅还会造成明显的布局位移。
-                本页另已补「聚焦即滚动」，无论卡片换行到第几排都能被滚进视野。
-                与歌单卡的视觉区分改用【虚线边框 + ＋ 号】实现 —— 对早年导入、名字仍是
-                「导入歌单 MM-DD HH:mm」的旧数据同样有效（改名只影响之后新导入的）。 */}
-            <View style={styles.grid}>
-              <Focusable
-                ref={getCardRefCallback(IMPORT_CARD_KEY, true) as any}
-                style={styles.importCard}
-                focusStyle={styles.importCardFocus}
-                onPress={() => { pushTVSettingsScreen(componentId) }}
-                onFocus={() => { revealCardRow(IMPORT_CARD_KEY) }}
-                onLayout={(e) => { recordCardBox(IMPORT_CARD_KEY, e.nativeEvent.layout.y, e.nativeEvent.layout.height) }}
-                nextFocusUp={getActiveTabHandle() ?? undefined}
-              >
-                <View style={styles.importHead}>
-                  <TVText variant="cardTitle" style={styles.importPlus}>＋</TVText>
-                  <TVText variant="cardTitle" numberOfLines={1}>{hasLists ? tvText.importSonglist : tvText.emptyMySonglists}</TVText>
-                </View>
-                <TVText variant="caption" color={tvColors.dimText} style={styles.emptyHint}>
-                  {hasLists ? tvText.importSonglistTip : tvText.emptyMySonglistsHint}
-                </TVText>
-              </Focusable>
-              {/* 「我的收藏」常驻卡：上游一直存在这个列表，但 TV 端此前无任何入口（09-20 需求）；
-                  红色调与自建歌单区分，封面取收藏里第一首歌的专辑图 */}
-              <TVPosterCard
-                key="mylist_love"
-                ref={getCardRefCallback('mylist_love') as any}
-                title="我的收藏"
-                subtitle={`收藏 · ${songCounts[LIST_IDS.LOVE] ?? '…'} 首`}
-                size="medium"
-                tint={tvColors.warn}
-                coverFallback="music"
-                image={cardCovers[LIST_IDS.LOVE] || undefined}
-                onPress={() => {
-                  pushTVDetailScreen(componentId, { type: 'userlist', id: LIST_IDS.LOVE, title: '我的收藏', subtitle: '收藏', userlist: { id: LIST_IDS.LOVE, name: '我的收藏', locationUpdateTime: null } as unknown as LX.List.UserListInfo })
-                }}
-                onFocus={() => { revealCardRow('mylist_love') }}
-                onLayout={(e) => { recordCardBox('mylist_love', e.nativeEvent.layout.y, e.nativeEvent.layout.height) }}
-                nextFocusUp={getActiveTabHandle() ?? undefined}
-              />
-              {userSonglists.map((item, index) => (
-                <TVPosterCard
-                  key={`mylist_${item.id}`}
-                  ref={getCardRefCallback(`mylist_${item.id}`) as any}
-                  title={item.name}
-                  subtitle={`${item.source ? getSourceName(item.source) : tvText.songlist} · ${songCounts[item.id] ?? '…'} 首`}
-                  meta={tvText.longPressManage}
-                  size="medium"
-                  tint={index % 2 ? tvColors.primary : tvColors.purple}
-                  coverFallback="music"
-                  image={cardCovers[item.id] || undefined}
-                  onPress={() => { openMySonglist(item) }}
-                  onLongPress={() => { handleManageSonglist(item) }}
-                  onFocus={() => { revealCardRow(`mylist_${item.id}`) }}
-                  onLayout={(e) => { recordCardBox(`mylist_${item.id}`, e.nativeEvent.layout.y, e.nativeEvent.layout.height) }}
-                  nextFocusUp={getActiveTabHandle() ?? undefined}
-                />
-              ))}
+        <TVText variant="caption" color={tvColors.dimText} style={[styles.hint, { marginBottom: z(tvSize(12)), marginLeft: z(tvSize(8)) }]}>{tvText.myListHint}</TVText>
+        {/* 注意：这里【不再】按 hasLists 二选一渲染。
+            以前「导入歌单」入口只长在空态卡上，一旦导入成功第一张歌单，hasLists 变 true，
+            整张空态卡（连同 onPress → 扫码页）就被卸载了，页面上再也没有第二次导入的入口 ——
+            这就是「歌单只能导入一个，想导入第二个没反应」的直接原因。
+            入口卡保持与歌单卡同尺寸的方形卡（虚线边框 + ＋ 号），换行后由「聚焦即滚动」保证可见。 */}
+        <View style={[styles.grid, { gap: z(tvSize(18)) }]} onLayout={(e) => { gridTopRef.current = e.nativeEvent.layout.y }}>
+          <Focusable
+            ref={getCardRefCallback(IMPORT_CARD_KEY, true) as any}
+            style={[styles.importCard, { width: z(tvSize(210)), padding: z(tvSize(8)) }]}
+            focusStyle={styles.importCardFocus}
+            onPress={() => { pushTVSettingsScreen(componentId) }}
+            onTVFocusChange={setImportFocused}
+            onFocus={() => { revealCardRow(IMPORT_CARD_KEY) }}
+            onLayout={(e) => { recordCardBox(IMPORT_CARD_KEY, e.nativeEvent.layout.y, e.nativeEvent.layout.height) }}
+            nextFocusUp={getActiveTabHandle() ?? undefined}
+          >
+            {/* 虚线边框只包封面、不包文字，尺寸与右侧歌单卡完全对齐（焦点时才换成实线高亮） */}
+            <View style={[styles.importArt, { width: z(tvSize(210)), height: z(tvSize(210)), borderRadius: z(tvTokens.radiusLg) }, importFocused ? styles.importArtFocus : null]}>
+              <TVText style={[styles.importPlus, { fontSize: z(tvFont(56)) }]}>＋</TVText>
             </View>
-            {importResult
-              ? <TVText variant="caption" color={importResult.ok ? tvColors.primaryHigh : tvColors.warn} style={styles.resultLine}>{`${tvText.lastImportResult}${importResult.message}`}</TVText>
-              : null}
-          </TVGlassPanel>
+            <TVText variant="cardTitle" numberOfLines={1} style={[styles.importTitle, { marginTop: z(tvSize(14)), fontSize: z(tvFont(21)) }]}>{tvText.importSonglist}</TVText>
+            <TVText variant="caption" color={tvColors.dimText} numberOfLines={1} style={[styles.importHint, { marginTop: z(tvSize(5)), fontSize: z(tvTokens.caption) }]}>手机扫码 / 粘贴链接</TVText>
+          </Focusable>
+          {/* 「我的收藏」常驻卡：上游一直存在这个列表，但 TV 端此前无任何入口（09-20 需求）；
+              红色调与自建歌单区分，封面取收藏里第一首歌的专辑图 */}
+          <TVPosterCard
+            key="mylist_love"
+            ref={getCardRefCallback('mylist_love') as any}
+            title="我的收藏"
+            subtitle={`收藏 · ${songCounts[LIST_IDS.LOVE] ?? '…'} 首`}
+            size="medium"
+            scale={contentScale}
+            tint={tvColors.warn}
+            coverFallback="music"
+            image={cardCovers[LIST_IDS.LOVE] || undefined}
+            onPress={() => {
+              pushTVDetailScreen(componentId, { type: 'userlist', id: LIST_IDS.LOVE, title: '我的收藏', subtitle: '收藏', userlist: { id: LIST_IDS.LOVE, name: '我的收藏', locationUpdateTime: null } as unknown as LX.List.UserListInfo })
+            }}
+            onFocus={() => { revealCardRow('mylist_love') }}
+            onLayout={(e) => { recordCardBox('mylist_love', e.nativeEvent.layout.y, e.nativeEvent.layout.height) }}
+            nextFocusUp={getActiveTabHandle() ?? undefined}
+          />
+          {userSonglists.map((item, index) => (
+            <TVPosterCard
+              key={`mylist_${item.id}`}
+              ref={getCardRefCallback(`mylist_${item.id}`) as any}
+              title={item.name}
+              subtitle={`${item.source ? getSourceName(item.source) : tvText.songlist} · ${songCounts[item.id] ?? '…'} 首`}
+              meta={tvText.longPressManage}
+              size="medium"
+              scale={contentScale}
+              tint={index % 2 ? tvColors.primary : tvColors.purple}
+              coverFallback="music"
+              image={cardCovers[item.id] || undefined}
+              onPress={() => { openMySonglist(item) }}
+              onLongPress={() => { handleManageSonglist(item) }}
+              onFocus={() => { revealCardRow(`mylist_${item.id}`) }}
+              onLayout={(e) => { recordCardBox(`mylist_${item.id}`, e.nativeEvent.layout.y, e.nativeEvent.layout.height) }}
+              nextFocusUp={getActiveTabHandle() ?? undefined}
+            />
+          ))}
         </View>
+        {importResult
+          ? <TVText variant="caption" color={importResult.ok ? tvColors.primaryHigh : tvColors.warn} style={[styles.resultLine, { marginTop: z(tvSize(16)) }]}>{`${tvText.lastImportResult}${importResult.message}`}</TVText>
+          : null}
       </ScrollView>
       <TVDialog
         visible={!!localDialog}
@@ -325,29 +329,36 @@ function TVMyList({ componentId }: { componentId: string }) {
 }
 
 const styles: Record<string, ViewStyle | TextStyle | any> = {
+  bodyScroll: { flex: 1 },
   content: { paddingBottom: tvSize(40) },
   header: { marginBottom: tvSize(20) },
+  title: { fontSize: tvTokens.heroTitle, lineHeight: tvFont(66), flexShrink: 0 },
   subtitle: { marginTop: tvSize(8), color: tvColors.subtext },
   hint: { marginTop: tvSize(10) },
-  panel: { padding: PANEL_PADDING },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: tvSize(18) },
-  // 入口卡：与歌单卡同排的方形卡（宽度沿用原来的 460），用「虚线边框 + ＋ 号」与歌单卡区分，
-  // 刻意不改成独占整行的横幅 —— 横幅会造成明显布局位移，而焦点可达性已由引擎「同带优先」解决，
-  // 卡片换行后的可见性由本页新补的「聚焦即滚动」保证。
+  // 入口卡：与歌单卡同尺寸的方形卡，用「虚线边框 + ＋ 号」与歌单卡区分，
+  // 刻意不改成独占整行的横幅 —— 横幅会造成明显布局位移，卡片换行后的可见性由「聚焦即滚动」保证。
   importCard: {
-    width: tvSize(460),
-    borderRadius: tvSize(18),
+    width: tvSize(210),
+    padding: tvSize(8),
+  },
+  importArt: {
+    width: tvSize(210),
+    height: tvSize(210),
+    borderRadius: tvTokens.radiusLg,
     borderWidth: 2,
     borderStyle: 'dashed',
     borderColor: tvColors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: 'rgba(255,255,255,0.04)',
-    padding: tvSize(18),
-    gap: tvSize(8),
   },
-  importCardFocus: { borderColor: tvColors.primaryHigh, borderStyle: 'solid', backgroundColor: 'rgba(255,255,255,0.08)' },
-  importHead: { flexDirection: 'row', alignItems: 'center', gap: tvSize(10) },
-  importPlus: { color: tvColors.primaryHigh },
-  emptyHint: { lineHeight: tvSize(22) },
+  // 焦点高亮只画在封面上（见 importArtFocus），整卡不再套一圈，避免双边框
+  importCardFocus: { backgroundColor: 'transparent', borderColor: 'transparent', shadowOpacity: 0, elevation: 0 },
+  importArtFocus: { borderColor: tvColors.primaryHigh, borderStyle: 'solid', backgroundColor: 'rgba(255,255,255,0.08)' },
+  importPlus: { color: tvColors.primaryHigh, fontWeight: '900' },
+  importTitle: { marginTop: tvSize(14) },
+  importHint: { marginTop: tvSize(5) },
   resultLine: { marginTop: tvSize(16), lineHeight: tvSize(22) },
 }
 

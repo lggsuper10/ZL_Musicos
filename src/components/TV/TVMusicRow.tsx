@@ -2,7 +2,7 @@ import { forwardRef, memo, useCallback, useEffect, useRef, useState, type Compon
 import { View, type ImageStyle, type ViewStyle } from 'react-native'
 import Image from '@/components/common/Image'
 import { getPicUrl } from '@/core/music/online'
-import { tvColors, tvSize } from '@/theme/tv'
+import { tvColors, tvSize, tvTokens } from '@/theme/tv'
 import Focusable from './Focusable'
 import TVText from './TVText'
 
@@ -16,6 +16,12 @@ interface Props extends Omit<ComponentProps<typeof Focusable>, 'children'> {
   active?: boolean
   lazyMusicInfo?: LX.Music.MusicInfoOnline | null
   style?: ViewStyle | ViewStyle[]
+  /**
+   * 行内几何与字号等比缩放系数（默认 1）。
+   * 桌面/短屏上首页会把 hero + 歌单架按可用高度等比缩小，播放列表页传同一个系数，
+   * 两个页面的字号和行高比例才会一致。
+   */
+  scale?: number
 }
 
 const TVMusicRow = forwardRef<any, Props>(({
@@ -28,9 +34,11 @@ const TVMusicRow = forwardRef<any, Props>(({
   active,
   lazyMusicInfo,
   style,
+  scale = 1,
   ...props
 }, ref) => {
   const showArt = image !== undefined || lazyMusicInfo !== undefined
+  const z = (value: number) => Math.max(1, Math.round(value * scale))
   const [resolvedImage, setResolvedImage] = useState<string | null>(image ?? null)
   const loadedRef = useRef(false)
 
@@ -50,28 +58,40 @@ const TVMusicRow = forwardRef<any, Props>(({
   return (
     <Focusable
       ref={ref}
-      style={[styles.root, active ? styles.active : null, style]}
+      style={[
+        styles.root,
+        {
+          minHeight: z(tvSize(72)),
+          borderRadius: z(tvSize(18)),
+          paddingHorizontal: z(tvSize(18)),
+          paddingVertical: z(tvSize(11)),
+          // 边框参与布局高度，必须跟缩放进退，否则列表按公式算出的行高会和实际差几像素
+          borderWidth: Math.max(1, Math.round(2 * scale)),
+        },
+        active ? styles.active : null,
+        style,
+      ]}
       focusStyle={styles.focus}
       {...props}
       onFocus={handleRowFocus}
     >
-      <View style={styles.indexBox}>
-        <TVText variant="body" color={active ? tvColors.primaryHigh : tvColors.dimText}>
+      <View style={[styles.indexBox, { width: z(tvSize(50)) }]}>
+        <TVText variant="body" color={active ? tvColors.primaryHigh : tvColors.dimText} style={{ fontSize: z(tvTokens.body) }}>
           {typeof index === 'number' ? String(index + 1).padStart(2, '0') : '\u266b'}
         </TVText>
       </View>
       {showArt ? (
-        <View style={styles.art}>
-          {resolvedImage ? <Image url={resolvedImage} resizeMode="cover" style={styles.artImage as ImageStyle} /> : <TVText variant="body" style={styles.artPlaceholder}>{title.slice(0, 1)}</TVText>}
+        <View style={[styles.art, { width: z(tvSize(58)), height: z(tvSize(58)), borderRadius: z(tvSize(14)), marginRight: z(tvSize(16)) }]}>
+          {resolvedImage ? <Image url={resolvedImage} resizeMode="cover" style={styles.artImage as ImageStyle} /> : <TVText variant="body" style={[styles.artPlaceholder, { fontSize: z(tvTokens.body) }]}>{title.slice(0, 1)}</TVText>}
         </View>
       ) : null}
       <View style={styles.info}>
-        <TVText variant="cardTitle" numberOfLines={1}>{title}</TVText>
-        {subtitle ? <TVText variant="caption" style={styles.subtitle} numberOfLines={1}>{subtitle}</TVText> : null}
+        <TVText variant="cardTitle" numberOfLines={1} style={{ fontSize: z(tvTokens.cardTitle) }}>{title}</TVText>
+        {subtitle ? <TVText variant="caption" style={[styles.subtitle, { fontSize: z(tvTokens.caption), marginTop: z(tvSize(6)) }]} numberOfLines={1}>{subtitle}</TVText> : null}
       </View>
-      <View style={styles.meta}>
-        {badge ? <TVText variant="caption" color={tvColors.primaryHigh} numberOfLines={1}>{badge}</TVText> : null}
-        {meta ? <TVText variant="caption" style={styles.metaText} numberOfLines={1}>{meta}</TVText> : null}
+      <View style={[styles.meta, { minWidth: z(tvSize(86)) }]}>
+        {badge ? <TVText variant="caption" color={tvColors.primaryHigh} numberOfLines={1} style={{ fontSize: z(tvTokens.caption) }}>{badge}</TVText> : null}
+        {meta ? <TVText variant="caption" style={[styles.metaText, { fontSize: z(tvTokens.caption) }]} numberOfLines={1}>{meta}</TVText> : null}
       </View>
     </Focusable>
   )

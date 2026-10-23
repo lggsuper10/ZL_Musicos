@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState, type ComponentRef } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from 'react'
 import { FlatList, View, findNodeHandle, type ImageStyle, type TextStyle, type ViewStyle } from 'react-native'
 import TVAppleScaffold from '@/components/TV/TVAppleScaffold'
 import TVTopTabs from '@/components/TV/TVTopTabs'
@@ -10,7 +10,7 @@ import type Focusable from '@/components/TV/Focusable'
 import Image from '@/components/common/Image'
 import TVDialog, { type TVDialogRequest } from '@/components/TV/TVDialog'
 import { getPicUrl } from '@/core/music/online'
-import { tvColors, tvFont, tvSize } from '@/theme/tv'
+import { tvColors, tvFont, tvSize, tvTokens } from '@/theme/tv'
 import { usePlayerMusicInfo } from '@/store/player/hook'
 import { useMyList } from '@/store/list/hook'
 import { getUserLists } from '@/utils/listManage'
@@ -31,9 +31,6 @@ import { useTVFetchedMusicList } from './useTVFetchedMusicList'
 
 type FocusNode = ComponentRef<typeof Focusable> | null
 type FocusRefMap = Record<string, FocusNode>
-// 行高 = 封面 58 + 上下 padding 16 + 分隔线 1（改样式后必须与 getItemLayout 保持一致，
-// 否则进页自动定位会被原生滚动按错误的行高夹住，停在列表中部）
-const ITEM_SIZE = tvSize(75)
 
 const PLAY_MODE_LABELS: Record<string, string> = {
   listLoop: '列表循环',
@@ -58,6 +55,20 @@ function TVQueue({ componentId }: { componentId: string }) {
   const listRef = useRef<FlatList<LX.Music.MusicInfo>>(null)
   const queueRefs = useRef<FocusRefMap>({})
   const [localDialog, setLocalDialog] = useState<TVDialogRequest | null>(null)
+
+  // 与首页同一套等比缩放：首页按可用高度把 hero + 歌单架整体缩进一屏，
+  // 播放列表页用同一个系数缩放标题、行高和预览，两个标签页的字号/留白比例才一致
+  const [contentHeight, setContentHeight] = useState(0)
+  const contentScale = useMemo(() => {
+    if (!contentHeight) return 1
+    return Math.max(0.5, Math.min(1, contentHeight / tvSize(680)))
+  }, [contentHeight])
+  const z = useCallback((value: number) => Math.max(1, Math.round(value * contentScale)), [contentScale])
+  // 行高 = 封面高度 + 上下内边距 + 上下边框 + 分隔线。
+  // 边框也算进布局，行高公式必须和 TVMusicRow 里的实际值一致，
+  // 否则 getItemLayout 的估算会和真实布局越差越远（长列表滚到后面偏出好几行）。
+  const itemBorder = Math.max(1, Math.round(2 * contentScale))
+  const itemSize = z(tvSize(58)) + z(tvSize(8)) * 2 + itemBorder * 2 + z(tvSize(1))
 
   // 加歌到自建歌单：前后快照对比，如实区分「新加 / 已存在 / 未写入」。
   // 注：musicInfos/label 必须走参数传入（旧版从 songlistDialog 状态里取，
@@ -175,9 +186,14 @@ function TVQueue({ componentId }: { componentId: string }) {
   // deps 不能带整个 fetchedMusicList——本页删歌、外部改 TEMP 都会重跑，
   // 把视图从用户所在位置猛地拽回播放歌曲处并重置选中态
   const locatedRef = useRef(false)
+  const handleRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => {
+    if (handleRefreshTimerRef.current) clearTimeout(handleRefreshTimerRef.current)
+  }, [])
   useEffect(() => {
     if (locatedRef.current) return
-    if (!fetchedMusicList.length || !currentMusicInfo.id) return
+    // 等布局量出高度、缩放系数确定后再定位：否则会按未缩放的行高滚到一个错误位置
+    if (!contentHeight || !fetchedMusicList.length || !currentMusicInfo.id) return
     const playingIndex = fetchedMusicList.findIndex(m => m.id === currentMusicInfo.id)
     if (playingIndex >= 0) {
       locatedRef.current = true
@@ -185,10 +201,16 @@ function TVQueue({ componentId }: { componentId: string }) {
       requestAnimationFrame(() => {
         // 用 scrollToIndex + viewOffset 而不是裸 offset：有 getItemLayout 时按行定位，
         // 原生不会因为「内容还没量完」把目标位置夹到列表中部
-        listRef.current?.scrollToIndex({ index: playingIndex, animated: false, viewOffset: ITEM_SIZE * 2 })
+        listRef.current?.scrollToIndex({ index: playingIndex, animated: false, viewOffset: itemSize * 2 })
+        // 目标行是滚动之后才挂载的：等它挂上再强制渲染一次，顶部按钮的 nextFocusDown
+        // 才能拿到「当前播放行」的最新句柄；否则下键会退回第一行，长列表里像焦点丢了
+        handleRefreshTimerRef.current = setTimeout(() => {
+          handleRefreshTimerRef.current = null
+          tabRefresh()
+        }, 500)
       })
     }
-  }, [currentMusicInfo.id, fetchedMusicList])
+  }, [contentHeight, currentMusicInfo.id, fetchedMusicList, itemSize, tabRefresh])
 
   useEffect(() => {
     if (!fetchedMusicList.length) {
@@ -218,7 +240,7 @@ function TVQueue({ componentId }: { componentId: string }) {
 
   const getQueueItemKey = (item: LX.Music.MusicInfo, index: number) => `${item.id}_${index}`
   // 固定行高交给 FlatList：内容总高立即确定，进页定位不会被虚拟列表的估算高度夹住
-  const getQueueItemLayout = (_data: unknown, index: number) => ({ length: ITEM_SIZE, offset: ITEM_SIZE * index, index })
+  const getQueueItemLayout = (_data: unknown, index: number) => ({ length: itemSize, offset: itemSize * index, index })
   const getQueueHandle = (key?: string | null) => key && queueRefs.current[key] ? findNodeHandle(queueRefs.current[key]) : null
   // 从顶部操作区按下键时回到「当前选中/正在播放」那一行，而不是永远跳到第 1 首
   // （队列很长时第 1 首在屏幕外，焦点会莫名消失到列表顶部）
@@ -233,7 +255,7 @@ function TVQueue({ componentId }: { componentId: string }) {
 
   const handleQueueFocus = (index: number) => {
     setSelectedIndex(index)
-    listRef.current?.scrollToOffset({ offset: Math.max(0, index * ITEM_SIZE - ITEM_SIZE), animated: true })
+    listRef.current?.scrollToOffset({ offset: Math.max(0, index * itemSize - itemSize), animated: true })
   }
 
   const handlePlayNow = async(index: number) => {
@@ -293,25 +315,45 @@ function TVQueue({ componentId }: { componentId: string }) {
     },
   })
 
+  const actionButtonStyle = useMemo(() => ({
+    minHeight: z(tvSize(54)),
+    paddingHorizontal: z(tvSize(26)),
+    paddingVertical: z(tvSize(14)),
+  }), [z])
+  const listContentStyle = useMemo(() => ({
+    paddingTop: z(tvSize(4)),
+    paddingBottom: z(tvSize(28)),
+    paddingRight: z(tvSize(4)),
+  }), [z])
+  const ListSeparator = useCallback(() => (
+    <View style={[styles.rowDivider, { height: z(tvSize(1)), marginHorizontal: z(tvSize(14)) }]} />
+  ), [z])
+
   return (
     <TVAppleScaffold image={currentMusicInfo.pic}>
       <TVTopTabs items={createTVTabs(componentId, 'queue')} activeId="queue" nextFocusDown={playModeFocus.getNodeHandle() ?? firstQueueFocus.getNodeHandle() ?? undefined} activeTabRef={activeTabFocus} onActiveTabReady={tabRefresh} />
-      <View style={styles.root}>
-        <View style={styles.header}>
+      <View style={styles.root} onLayout={event => {
+        const height = Math.round(event.nativeEvent.layout.height)
+        // 只认第一次有效测量：顶栏 tab 获得/失去焦点时自身高度会变（发光的选中胶囊），
+        // 若跟着重算，一按方向键整页字号和行高就跳一下。首次值锁定后不再变。
+        if (height < 120) return
+        setContentHeight(prev => prev || height)
+      }}>
+        <View style={[styles.header, { marginBottom: z(tvSize(18)), gap: z(tvSize(20)) }]}>
           <View style={styles.headerMain}>
-            <TVText variant="pageTitle" style={styles.title}>播放列表</TVText>
-            <TVText variant="caption" style={styles.subtitle} numberOfLines={1}>
+            <TVText variant="pageTitle" style={[styles.title, { fontSize: z(tvTokens.heroTitle), lineHeight: z(tvFont(66)) }]}>播放列表</TVText>
+            <TVText variant="caption" style={[styles.subtitle, { marginTop: z(tvSize(4)) }]} numberOfLines={1}>
               {`${fetchedMusicList.length} 首${dot}${playModeLabel}${queueSourceName ? `${dot}${tvText.queueFromSonglist}「${queueSourceName}」` : ''}`}
             </TVText>
           </View>
-          <View style={styles.actions}>
-            <TVButton ref={playModeFocus.ref as any} label={`模式: ${playModeLabel}`} tone="dark" onPress={handleCyclePlayMode} hasTVPreferredFocus nextFocusUp={getActiveTabHandle() ?? undefined} nextFocusRight={addAllFocus.getNodeHandle() ?? undefined} nextFocusDown={getSelectedQueueHandle() ?? firstQueueFocus.getNodeHandle() ?? undefined} />
-            <TVButton ref={addAllFocus.ref as any} label="全部加入歌单" tone={fetchedMusicList.length ? 'ghost' : 'dark'} onPress={() => { void openSonglistPicker(fetchedMusicList, `播放列表全部 ${fetchedMusicList.length} 首`) }} nextFocusUp={getActiveTabHandle() ?? undefined} nextFocusLeft={playModeFocus.getNodeHandle() ?? undefined} nextFocusRight={clearFocus.getNodeHandle() ?? undefined} nextFocusDown={getSelectedQueueHandle() ?? firstQueueFocus.getNodeHandle() ?? undefined} />
-            <TVButton ref={clearFocus.ref as any} label={tvText.clearList} tone={fetchedMusicList.length ? 'ghost' : 'dark'} onPress={handleClear} nextFocusUp={getActiveTabHandle() ?? undefined} nextFocusLeft={addAllFocus.getNodeHandle() ?? undefined} nextFocusDown={getSelectedQueueHandle() ?? firstQueueFocus.getNodeHandle() ?? undefined} />
+          <View style={[styles.actions, { gap: z(tvSize(12)) }]}>
+            <TVButton ref={playModeFocus.ref as any} label={`模式: ${playModeLabel}`} tone="dark" style={actionButtonStyle} onPress={handleCyclePlayMode} hasTVPreferredFocus nextFocusUp={getActiveTabHandle() ?? undefined} nextFocusRight={addAllFocus.getNodeHandle() ?? undefined} nextFocusDown={getSelectedQueueHandle() ?? firstQueueFocus.getNodeHandle() ?? undefined} />
+            <TVButton ref={addAllFocus.ref as any} label="全部加入歌单" tone={fetchedMusicList.length ? 'ghost' : 'dark'} style={actionButtonStyle} onPress={() => { void openSonglistPicker(fetchedMusicList, `播放列表全部 ${fetchedMusicList.length} 首`) }} nextFocusUp={getActiveTabHandle() ?? undefined} nextFocusLeft={playModeFocus.getNodeHandle() ?? undefined} nextFocusRight={clearFocus.getNodeHandle() ?? undefined} nextFocusDown={getSelectedQueueHandle() ?? firstQueueFocus.getNodeHandle() ?? undefined} />
+            <TVButton ref={clearFocus.ref as any} label={tvText.clearList} tone={fetchedMusicList.length ? 'ghost' : 'dark'} style={actionButtonStyle} onPress={handleClear} nextFocusUp={getActiveTabHandle() ?? undefined} nextFocusLeft={addAllFocus.getNodeHandle() ?? undefined} nextFocusDown={getSelectedQueueHandle() ?? firstQueueFocus.getNodeHandle() ?? undefined} />
           </View>
         </View>
 
-        <View style={styles.body}>
+        <View style={[styles.body, { gap: z(tvSize(28)) }]}>
           <View style={styles.listColumn}>
             <FlatList
               ref={listRef}
@@ -321,12 +363,12 @@ function TVQueue({ componentId }: { componentId: string }) {
               removeClippedSubviews={false}
               style={styles.list}
               getItemLayout={getQueueItemLayout}
-              contentContainerStyle={styles.listContent}
+              contentContainerStyle={listContentStyle}
               ItemSeparatorComponent={ListSeparator}
-              ListEmptyComponent={<TVText variant="meta" style={styles.empty}>{tvText.emptyQueueHint}</TVText>}
+              ListEmptyComponent={<TVText variant="meta" style={[styles.empty, { marginTop: z(tvSize(24)) }]}>{tvText.emptyQueueHint}</TVText>}
               // 操作提示放在列表顶部而不是右栏：右栏高度随屏幕变化，长提示在短屏上会被裁掉
               ListHeaderComponent={fetchedMusicList.length ? (
-                <TVText variant="caption" color={tvColors.dimText} style={styles.listHint}>{`OK 立即播放${dot}长按 OK 加入歌单 / 删除`}</TVText>
+                <TVText variant="caption" color={tvColors.dimText} style={[styles.listHint, { marginLeft: z(tvSize(14)), marginBottom: z(tvSize(8)) }]}>{`OK 立即播放${dot}长按 OK 加入歌单 / 删除`}</TVText>
               ) : null}
               renderItem={({ item, index }) => {
                 const itemKey = getQueueItemKey(item, index)
@@ -343,7 +385,17 @@ function TVQueue({ componentId }: { componentId: string }) {
                     badge={isCurrentPlaying ? '▶ 正在播放' : undefined}
                     lazyMusicInfo={item as LX.Music.MusicInfoOnline}
                     active={isCurrentPlaying}
-                    style={[styles.row, isCurrentPlaying ? styles.rowPlaying : null]}
+                    scale={contentScale}
+                    style={[
+                      styles.row,
+                      {
+                        minHeight: z(tvSize(58)),
+                        paddingHorizontal: z(tvSize(14)),
+                        paddingVertical: z(tvSize(8)),
+                        borderRadius: z(tvSize(14)),
+                      },
+                      isCurrentPlaying ? styles.rowPlaying : null,
+                    ]}
                     focusStyle={styles.rowFocus}
                     // 与排行榜页一致：遥控焦点由 tvFocusManager 直接分发，onFocus 在部分设备上不触发
                     onTVFocusChange={focused => { if (focused) handleQueueFocus(index) }}
@@ -356,32 +408,32 @@ function TVQueue({ componentId }: { componentId: string }) {
               }}
             />
             {/* 列表底部渐隐：最后一行常被下边缘截半个字，淡出比硬切干净 */}
-            <View pointerEvents="none" style={styles.listFade}>
-              <TVFadeOverlay height={tvSize(84)} peak={0.92} direction="up" />
+            <View pointerEvents="none" style={[styles.listFade, { height: z(tvSize(84)) }]}>
+              <TVFadeOverlay height={z(tvSize(84))} peak={0.92} direction="up" />
             </View>
           </View>
 
           {/* 选中歌曲预览：封面 + 出处 + 曲名/歌手，与排行榜页右栏同一套版式 */}
-          <View style={styles.preview}>
-            <View style={styles.previewCoverWrap}>
+          <View style={[styles.preview, { minWidth: z(tvSize(280)), maxHeight: z(tvSize(500)), borderRadius: z(tvSize(28)), padding: z(tvSize(26)) }]}>
+            <View style={[styles.previewCoverWrap, { maxWidth: z(tvSize(190)), borderRadius: z(tvSize(24)), marginBottom: z(tvSize(16)) }]}>
               {previewImage
                 ? <Image url={previewImage} resizeMode="cover" style={styles.previewCover as ImageStyle} />
-                : <TVText variant="pageTitle" color={tvColors.primaryHigh} style={styles.previewCoverPlaceholder}>{selectedMusicInfo ? (selectedMusicInfo.name ?? '?').slice(0, 1) : '♪'}</TVText>}
+                : <TVText variant="pageTitle" color={tvColors.primaryHigh} style={[styles.previewCoverPlaceholder, { fontSize: z(tvFont(64)) }]}>{selectedMusicInfo ? (selectedMusicInfo.name ?? '?').slice(0, 1) : '♪'}</TVText>}
             </View>
-            <TVText variant="caption" color={tvColors.primaryHigh} numberOfLines={1} style={styles.previewKicker}>
+            <TVText variant="caption" color={tvColors.primaryHigh} numberOfLines={1} style={[styles.previewKicker, { marginBottom: z(tvSize(8)) }]}>
               {selectedMusicInfo ? `${getSourceName(selectedMusicInfo.source)}${selectedIsPlaying ? `${dot}${tvText.nowPlaying}` : ''}` : '当前播放队列'}
             </TVText>
             {selectedMusicInfo ? (
               <>
-                <TVText style={styles.previewName} numberOfLines={2}>{selectedMusicInfo.name ?? tvText.unknownSong}</TVText>
-                <TVText variant="caption" style={styles.previewMeta} numberOfLines={2}>{getMusicSubtitle(selectedMusicInfo)}</TVText>
+                <TVText style={[styles.previewName, { fontSize: z(tvTokens.railTitle), lineHeight: z(tvFont(36)) }]} numberOfLines={2}>{selectedMusicInfo.name ?? tvText.unknownSong}</TVText>
+                <TVText variant="caption" style={[styles.previewMeta, { marginTop: z(tvSize(6)) }]} numberOfLines={2}>{getMusicSubtitle(selectedMusicInfo)}</TVText>
               </>
             ) : (
-              <TVText variant="meta" style={styles.previewEmpty}>{tvText.emptyQueueHint}</TVText>
+              <TVText variant="meta" style={[styles.previewEmpty, { marginTop: z(tvSize(8)), lineHeight: z(tvFont(24)) }]}>{tvText.emptyQueueHint}</TVText>
             )}
             {selectedMusicInfo ? (
-              <View pointerEvents="none" style={styles.previewWatermarkWrap}>
-                <TVText style={[styles.previewWatermark, { color: tvColors.primaryHigh }]}>{String(selectedIndex + 1).padStart(2, '0')}</TVText>
+              <View pointerEvents="none" style={[styles.previewWatermarkWrap, { right: z(tvSize(14)), bottom: -z(tvSize(28)) }]}>
+                <TVText style={[styles.previewWatermark, { color: tvColors.primaryHigh, fontSize: z(tvFont(120)), lineHeight: z(tvFont(128)) }]}>{String(selectedIndex + 1).padStart(2, '0')}</TVText>
               </View>
             ) : null}
           </View>
@@ -412,7 +464,8 @@ const styles: Record<string, ViewStyle | TextStyle | ImageStyle | any> = {
   // 标题 / 模式 / 批量操作挤在同一行，省下的纵向空间全部留给队列
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: tvSize(20), marginBottom: tvSize(18) },
   headerMain: { flexShrink: 1, minWidth: 0 },
-  title: { fontSize: tvFont(48), lineHeight: tvFont(56), flexShrink: 0 },
+  // 字号与推荐页对齐：页面标题用推荐页大标题同款（heroTitle），正文用卡片内容字号
+  title: { fontSize: tvTokens.heroTitle, lineHeight: tvFont(66), flexShrink: 0 },
   subtitle: { marginTop: tvSize(4), color: tvColors.subtext },
   actions: { flexDirection: 'row', alignItems: 'center', gap: tvSize(12) },
   body: { flex: 1, minHeight: 0, flexDirection: 'row', gap: tvSize(28), overflow: 'hidden' },
@@ -465,14 +518,13 @@ const styles: Record<string, ViewStyle | TextStyle | ImageStyle | any> = {
   previewCover: { width: '100%', height: '100%' },
   previewCoverPlaceholder: { fontSize: tvFont(64), fontWeight: '900', opacity: 0.7 },
   previewKicker: { fontWeight: '900', letterSpacing: 1.1, marginBottom: tvSize(8) },
-  previewName: { fontSize: tvFont(28), lineHeight: tvFont(36), fontWeight: '900', color: tvColors.text },
+  // 预览卡标题与推荐页「推荐歌单」同级（railTitle），列表行才是卡片内容字号
+  previewName: { fontSize: tvTokens.railTitle, lineHeight: tvFont(36), fontWeight: '900', color: tvColors.text },
   previewMeta: { marginTop: tvSize(6), color: tvColors.subtext },
   listHint: { marginLeft: tvSize(14), marginBottom: tvSize(8) },
   previewEmpty: { marginTop: tvSize(8), color: tvColors.subtext, lineHeight: tvFont(24) },
   previewWatermarkWrap: { position: 'absolute', right: tvSize(14), bottom: -tvSize(28), opacity: 0.12 },
   previewWatermark: { fontSize: tvFont(120), lineHeight: tvFont(128), fontWeight: '900' },
 }
-
-const ListSeparator = () => <View style={styles.rowDivider} />
 
 export default memo(TVQueue)
