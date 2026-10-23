@@ -19,6 +19,11 @@ interface Props extends Omit<ComponentProps<typeof Focusable>, 'children'> {
    *   放大单个字母会出现一个莫名其妙的大字，改用统一音符更干净，也不会随名字变形
    */
   coverFallback?: 'letter' | 'music'
+  /**
+   * 整卡（封面 + 文字 + 间距）的等比缩放系数。首页要「一屏放下」时按实测视口高度
+   * 算出一个 <1 的系数传进来，避免固定尺寸在短屏幕上把歌单架顶出屏幕。
+   */
+  scale?: number
 }
 
 const sizes = {
@@ -28,8 +33,10 @@ const sizes = {
   wide: { width: tvSize(330), height: tvSize(186) },
 }
 
-const TVPosterCard = forwardRef<any, Props>(({ title, subtitle, meta, image, size = 'medium', tint = tvColors.primary, coverFallback = 'letter', style, onTVFocusChange, ...props }, ref) => {
-  const cardSize = sizes[size]
+const TVPosterCard = forwardRef<any, Props>(({ title, subtitle, meta, image, size = 'medium', tint = tvColors.primary, coverFallback = 'letter', scale = 1, style, onTVFocusChange, ...props }, ref) => {
+  const z = (value: number) => Math.max(1, Math.round(value * scale))
+  const preset = sizes[size]
+  const cardSize = { width: z(preset.width), height: z(preset.height) }
   const [focused, setFocused] = useState(false)
   const handleFocusChange = useCallback((nextFocused: boolean) => {
     setFocused(nextFocused)
@@ -37,20 +44,20 @@ const TVPosterCard = forwardRef<any, Props>(({ title, subtitle, meta, image, siz
   }, [onTVFocusChange])
 
   return (
-    <Focusable ref={ref} style={[styles.root, { width: cardSize.width }, typeof style === 'function' ? null : style]} focusStyle={styles.focus} onTVFocusChange={handleFocusChange} {...props}>
+    <Focusable ref={ref} style={[styles.root, { width: cardSize.width, padding: z(tvSize(8)) }, typeof style === 'function' ? null : style]} focusStyle={styles.focus} onTVFocusChange={handleFocusChange} {...props}>
       <View style={[styles.art, cardSize, { backgroundColor: tint }]}>
         {image ? <Image url={image} style={styles.image as ImageStyle} resizeMode="cover" /> : null}
         <View style={styles.artOverlay} />
         {!image
           ? coverFallback === 'music'
-            ? <TVText style={styles.musicGlyph}>♪</TVText>
-            : <TVText variant="pageTitle" style={styles.placeholder}>{title.slice(0, 1)}</TVText>
+            ? <TVText style={[styles.musicGlyph, { fontSize: z(tvFont(56)) }]}>♪</TVText>
+            : <TVText variant="pageTitle" style={[styles.placeholder, { fontSize: z(tvFont(74)) }]}>{title.slice(0, 1)}</TVText>
           : null}
         {focused ? <View pointerEvents="none" style={styles.artFocusRing} /> : null}
       </View>
-      <TVText variant="cardTitle" style={styles.title} numberOfLines={1}>{title}</TVText>
-      {subtitle ? <TVText variant="caption" style={styles.subtitle} numberOfLines={1}>{subtitle}</TVText> : null}
-      {meta ? <TVText variant="caption" style={styles.meta} numberOfLines={1}>{meta}</TVText> : null}
+      <TVText variant="cardTitle" style={[styles.title, { marginTop: z(tvSize(14)), fontSize: z(tvFont(21)) }]} numberOfLines={1}>{title}</TVText>
+      {subtitle ? <TVText variant="caption" style={[styles.subtitle, { marginTop: z(tvSize(5)), fontSize: z(tvTokens.caption) }]} numberOfLines={1}>{subtitle}</TVText> : null}
+      {meta ? <TVText variant="caption" style={[styles.meta, { marginTop: z(tvSize(3)), fontSize: z(tvTokens.caption) }]} numberOfLines={1}>{meta}</TVText> : null}
     </Focusable>
   )
 })

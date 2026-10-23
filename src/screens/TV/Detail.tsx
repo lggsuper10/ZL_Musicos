@@ -5,7 +5,6 @@ import TVTopTabs from '@/components/TV/TVTopTabs'
 import TVText from '@/components/TV/TVText'
 import TVButton from '@/components/TV/TVButton'
 import TVMusicRow from '@/components/TV/TVMusicRow'
-import TVGlassPanel from '@/components/TV/TVGlassPanel'
 import TVDialog, { type TVDialogRequest } from '@/components/TV/TVDialog'
 import { focusTVTargetByRef } from '@/components/TV/tvFocusManager'
 import type Focusable from '@/components/TV/Focusable'
@@ -77,10 +76,11 @@ function TVDetail({ componentId, payload }: Props) {
   })
 
   const image = payload.type === 'songlist' ? payload.songlist.img : null
+  // 榜单页的标题本身就是榜名，「· 排行榜 · 热歌榜」纯属重复，只留音源
   const heroMeta = payload.type === 'songlist'
     ? `${getSourceName(payload.source)}${dot}${tvText.songlist}${payload.songlist.play_count ? `${dot}${payload.songlist.play_count}` : ''}`
     : payload.type === 'board'
-      ? `${getSourceName(payload.source)}${dot}${tvText.charts}${dot}${tvText.hotChart}`
+      ? `${getSourceName(payload.source)}${dot}${tvText.charts}`
       : `${tvText.userList}${payload.source ? `${dot}${getSourceName(payload.source)}` : ''}`
 
   useEffect(() => {
@@ -140,8 +140,7 @@ function TVDetail({ componentId, payload }: Props) {
       setList(prev => [...prev, ...fresh])
       setLoadedPage(nextPage)
       if (result.total) setTotal(result.total)
-    } catch { /* 加载更多失败保持现状，可重点「重试」重新拉首页 */ }
-    finally { setLoadingMore(false) }
+    } catch { /* 加载更多失败保持现状，可重点「重试」重新拉首页 */ } finally { setLoadingMore(false) }
   }
 
   // 本地歌单（userlist）内容变化时实时刷新：
@@ -249,11 +248,9 @@ function TVDetail({ componentId, payload }: Props) {
       <View style={styles.root}>
         <View style={styles.stage}>
           <View style={styles.coverStage}>
-            <View style={styles.coverGlow} />
-            <View style={styles.coverFrame}>
+            <View style={[styles.coverFrame, image ? null : styles.coverFrameEmpty]}>
               {image ? <Image url={image} style={styles.coverImage as ImageStyle} resizeMode="cover" /> : <TVText variant="pageTitle" color={tvColors.primaryHigh} style={styles.coverPlaceholder}>{(payload.title || '?').slice(0, 1)}</TVText>}
             </View>
-            <View style={styles.coverReflection} />
           </View>
 
           <View style={styles.heroInfo}>
@@ -293,12 +290,18 @@ function TVDetail({ componentId, payload }: Props) {
           </View>
         </View>
 
-        <TVGlassPanel style={styles.listPanel}>
+        {/* 不加玻璃面板外框：整页只留一条细分隔线分开「封面信息」和「歌曲列表」，
+            与推荐/排行榜页的去边框方向一致 */}
+        <View style={styles.listPanel}>
           <View style={styles.listHeader}>
             <TVText variant="sectionTitle" style={styles.listTitle}>{tvText.songList}</TVText>
-            <TVText variant="caption" color={tvColors.primaryHigh}>{statsText}</TVText>
+            <TVText variant="caption" color={tvColors.subtext}>{statsText}</TVText>
           </View>
-          {list.length ? <TVText variant="caption" color={tvColors.dimText} style={styles.listHint}>{tvText.detailPlayHint}</TVText> : null}
+          {list.length ? (
+            <TVText variant="caption" color={tvColors.dimText} style={styles.listHint}>
+              {payload.type === 'userlist' ? tvText.detailRemoveHint : tvText.detailPlayHint}
+            </TVText>
+          ) : null}
           <FlatList
             ref={listRef}
             data={list}
@@ -307,6 +310,7 @@ function TVDetail({ componentId, payload }: Props) {
             showsVerticalScrollIndicator={false}
             removeClippedSubviews={false}
             contentContainerStyle={styles.listContent}
+            ItemSeparatorComponent={ListSeparator}
             ListEmptyComponent={!loading ? (
               <View style={styles.emptyBox}>
                 {error ? (
@@ -346,7 +350,8 @@ function TVDetail({ componentId, payload }: Props) {
                   title={item.name}
                   subtitle={`${item.singer ?? tvText.unknownSinger}${dot}${item.meta.albumName ?? tvText.unknownAlbum}`}
                   meta={item.interval ?? getSourceName(item.source)}
-                  badge={index < 3 ? tvText.hotChart : undefined}
+                  style={styles.row}
+                  focusStyle={styles.rowFocus}
                   hasTVPreferredFocus={false}
                   onFocus={() => { handleFocus(index) }}
                   onPress={() => { void handlePlay(index) }}
@@ -358,7 +363,7 @@ function TVDetail({ componentId, payload }: Props) {
               )
             }}
           />
-        </TVGlassPanel>
+        </View>
       </View>
       <TVDialog
         visible={!!localDialog}
@@ -379,45 +384,26 @@ function TVDetail({ componentId, payload }: Props) {
 
 const styles: Record<string, ViewStyle | TextStyle | ImageStyle | any> = {
   scaffoldContent: { paddingTop: tvSize(30), paddingBottom: tvSize(38) },
-  root: { flex: 1, flexDirection: 'row', gap: tvSize(24), alignItems: 'stretch' },
-  stage: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: tvSize(18), paddingRight: tvSize(2) },
-  coverStage: { width: tvSize(188), height: tvSize(300), alignItems: 'center', justifyContent: 'center' },
-  coverGlow: {
-    position: 'absolute',
-    width: tvSize(198),
-    height: tvSize(198),
-    borderRadius: tvSize(44),
-    backgroundColor: 'rgba(216,230,255,0.16)',
-    top: tvSize(32),
-    opacity: 0.9,
-  },
+  root: { flex: 1, flexDirection: 'row', gap: tvSize(28), alignItems: 'stretch' },
+  stage: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: tvSize(22), paddingRight: tvSize(2) },
+  coverStage: { width: tvSize(196), height: tvSize(196), alignItems: 'center', justifyContent: 'center' },
+  // 封面不描边：只靠圆角 + 投影和背景分开，避免首页/详情页都出现「大框套小框」
   coverFrame: {
     width: tvSize(184),
     height: tvSize(184),
     borderRadius: tvSize(26),
     overflow: 'hidden',
-    backgroundColor: tvColors.surfaceWarm,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.34)',
     elevation: 24,
     shadowColor: '#000',
     shadowOpacity: 0.45,
     shadowRadius: tvSize(30),
     shadowOffset: { width: 0, height: tvSize(22) },
   },
+  coverFrameEmpty: { backgroundColor: 'rgba(138,173,255,0.13)' },
   coverImage: { width: '100%', height: '100%' },
-  coverPlaceholder: { fontSize: tvFont(76), fontWeight: '900', opacity: 0.5 },
-  coverReflection: {
-    width: tvSize(146),
-    height: tvSize(46),
-    marginTop: tvSize(12),
-    borderRadius: tvSize(40),
-    backgroundColor: 'rgba(255,255,255,0.07)',
-    transform: [{ scaleY: 0.42 }],
-    opacity: 0.72,
-  },
+  coverPlaceholder: { fontSize: tvFont(76), fontWeight: '900', opacity: 0.7 },
   heroInfo: { flex: 1, minWidth: 0, justifyContent: 'center', paddingBottom: tvSize(18) },
   kickerRow: { flexDirection: 'row', alignItems: 'center', maxWidth: '100%' },
   kicker: { flexShrink: 1 },
@@ -426,20 +412,36 @@ const styles: Record<string, ViewStyle | TextStyle | ImageStyle | any> = {
   actions: { flexDirection: 'row', gap: tvSize(12), marginTop: tvSize(20) },
   actionButton: { minWidth: tvSize(118), minHeight: tvSize(50), paddingHorizontal: tvSize(18), paddingVertical: tvSize(12) },
   backButton: { minWidth: tvSize(88), minHeight: tvSize(50), paddingHorizontal: tvSize(18), paddingVertical: tvSize(12) },
+  // 只用一条竖向细线分隔两栏，不再用整块玻璃面板框住列表
   listPanel: {
-    width: tvSize(376),
-    padding: tvSize(22),
-    backgroundColor: 'rgba(10,14,24,0.55)',
-    borderColor: 'rgba(255,255,255,0.24)',
+    width: '44%',
+    minWidth: tvSize(340),
+    maxWidth: tvSize(680),
+    paddingLeft: tvSize(28),
+    borderLeftWidth: 1,
+    borderLeftColor: 'rgba(255,255,255,0.10)',
   },
-  listHeader: { minHeight: tvSize(42), flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: tvSize(16) },
-  listHint: { marginBottom: tvSize(10) },
+  listHeader: { minHeight: tvSize(42), flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: tvSize(16) },
+  listHint: { marginTop: tvSize(6), marginBottom: tvSize(8) },
   listTitle: { fontSize: tvFont(25) },
   list: { flex: 1 },
-  listContent: { paddingTop: tvSize(14), paddingBottom: tvSize(18), gap: tvSize(10) },
+  listContent: { paddingTop: tvSize(6), paddingBottom: tvSize(18) },
+  // 行本身透明，靠分隔线区分；焦点态才出现高亮块
+  row: {
+    backgroundColor: 'transparent',
+    minHeight: tvSize(58),
+    paddingHorizontal: tvSize(14),
+    paddingVertical: tvSize(8),
+    borderRadius: tvSize(14),
+  },
+  // 焦点只加一层淡填充，边框/外发光交给 Focusable 默认焦点态，避免叠出双层框
+  rowFocus: { backgroundColor: 'rgba(255,255,255,0.14)' },
+  rowDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.07)', marginHorizontal: tvSize(14) },
   empty: { marginTop: tvSize(18) },
   emptyBox: { marginTop: tvSize(18), gap: tvSize(12), alignItems: 'flex-start' },
   loadMore: { marginTop: tvSize(8), alignSelf: 'stretch' },
 }
+
+const ListSeparator = () => <View style={styles.rowDivider} />
 
 export default memo(TVDetail)

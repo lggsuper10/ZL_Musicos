@@ -181,29 +181,31 @@ export default async(setting: LX.AppSetting) => {
         global.state_event.apiSourceUpdated(settingState.setting['common.apiSource'])
       }
     } else {
-      if (getCachedIsTV() && /^tv_preset_/.test(info.id)) {
-        void tryNextTVPresetUserApiCandidate().then(switched => {
-          if (switched) return
-          if (errorMessage) {
-            void tipDialog({
-              message: `${global.i18n.t('user_api__init_failed_alert', { name: info.name })}\n${errorMessage}`,
-              btnText: global.i18n.t('ok'),
-            })
-          }
-        }).catch(() => {
-          if (errorMessage) {
-            void tipDialog({
-              message: `${global.i18n.t('user_api__init_failed_alert', { name: info.name })}\n${errorMessage}`,
-              btnText: global.i18n.t('ok'),
-            })
-          }
-        })
-      } else if (errorMessage) {
+      const notifyInitFailed = () => {
+        // TV 端不弹窗：音源初始化失败往往发生在 App 启动、焦点引擎还没就绪的时候，
+        // TVDialog 的按钮拿不到焦点，遥控 OK 键关不掉，弹窗会一直糊在首页上。
+        // 失败状态已由 setUserApiStatus 写入，设置页的音源列表里能看到「不可用」，
+        // 这里只记日志，不打断用户。
+        if (getCachedIsTV()) {
+          log.error(`user api init failed: ${info.name}${errorMessage ? ` - ${errorMessage}` : ''}`)
+          return
+        }
+        if (!errorMessage) return
         void tipDialog({
           message: `${global.i18n.t('user_api__init_failed_alert', { name: info.name })}\n${errorMessage}`,
           // selection: true,
           btnText: global.i18n.t('ok'),
         })
+      }
+      if (getCachedIsTV() && /^tv_preset_/.test(info.id)) {
+        void tryNextTVPresetUserApiCandidate().then(switched => {
+          if (switched) return
+          notifyInitFailed()
+        }).catch(() => {
+          notifyInitFailed()
+        })
+      } else {
+        notifyInitFailed()
       }
     }
     if (!global.lx.apiInitPromise[1]) global.lx.apiInitPromise[2](status)

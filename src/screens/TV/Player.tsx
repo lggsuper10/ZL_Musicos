@@ -157,8 +157,11 @@ function TVPlayer({ componentId }: { componentId: string }) {
 
   const appleLayout = useMemo(() => {
     const metrics = getTVLayoutMetrics(screenWidth, screenHeight)
+    // 设计画布 1144×644：scale 既不能超过「画布铺满窗口」的 rawScale（否则 1144*scale/644*scale
+    // 会大于窗口、offsetX/offsetY 变负数、绝对定位内容朝四周溢出），也不能超过全局缩放上限
+    // （否则 4K 上被放大到与全局界面比例失衡）。0.92 是「别缩太小」的软下限，但必须被 rawScale 压住。
     const rawScale = Math.min(screenWidth / 1144, screenHeight / 644)
-    const scale = Math.max(0.92, Math.min(rawScale, metrics.scale * (1.22 / 1.2)))
+    const scale = Math.min(rawScale, Math.max(0.92, metrics.scale * (1.22 / 1.2)))
     const offsetX = (screenWidth - 1144 * scale) / 2
     const offsetY = (screenHeight - 644 * scale) / 2
     const s = (value: number) => Math.round(value * scale)

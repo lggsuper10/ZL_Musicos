@@ -10,37 +10,37 @@ interface Props {
   subtitle?: string
   image?: string | null
   style?: ViewStyle | ViewStyle[]
+  /**
+   * Hero 整体等比缩放系数（标题、副标题、封面、按钮间距一起缩）。
+   * 首页按实测视口高度算出系数传进来，保证 hero + 歌单架一屏放得下。
+   */
+  scale?: number
 }
 
-const TVHeroShelf = ({ kicker, title, subtitle, image, style, children }: PropsWithChildren<Props>) => (
-  <View style={[styles.root, style]}>
-    <View style={styles.copy}>
-      {kicker ? <TVText variant="caption" style={styles.kicker}>{kicker}</TVText> : null}
-      <TVText variant="pageTitle" style={styles.title} numberOfLines={2}>{title}</TVText>
-      {subtitle ? <TVText variant="body" style={styles.subtitle} numberOfLines={2}>{subtitle}</TVText> : null}
-      <View style={styles.actions}>{children}</View>
+const TVHeroShelf = ({ kicker, title, subtitle, image, style, scale = 1, children }: PropsWithChildren<Props>) => {
+  const z = (value: number) => Math.max(1, Math.round(value * scale))
+  return (
+    <View style={[styles.root, { minHeight: z(tvSize(300)) }, style]}>
+      <View style={[styles.copy, { paddingRight: z(tvSize(44)) }]}>
+        {kicker ? <TVText variant="caption" style={[styles.kicker, { fontSize: z(tvTokens.caption) }]}>{kicker}</TVText> : null}
+        <TVText variant="pageTitle" style={[styles.title, { marginTop: z(tvSize(10)), fontSize: z(tvFont(56)), lineHeight: z(tvFont(66)) }]} numberOfLines={2}>{title}</TVText>
+        {subtitle ? <TVText variant="body" style={[styles.subtitle, { marginTop: z(tvSize(12)), fontSize: z(tvFont(19)), lineHeight: z(tvFont(29)) }]} numberOfLines={2}>{subtitle}</TVText> : null}
+        <View style={[styles.actions, { gap: z(tvSize(14)), marginTop: z(tvSize(28)) }]}>{children}</View>
+      </View>
+      <View style={[styles.coverWrap, { width: z(tvSize(276)), height: z(tvSize(276)), borderRadius: z(tvSize(36)) }]}>
+        {image ? <Image url={image} resizeMode="cover" style={styles.cover as ImageStyle} /> : <TVText variant="pageTitle" style={[styles.placeholder, { fontSize: z(tvFont(110)) }]}>?</TVText>}
+      </View>
     </View>
-    <View style={styles.coverWrap}>
-      {image ? <Image url={image} resizeMode="cover" style={styles.cover as ImageStyle} /> : <TVText variant="pageTitle" style={styles.placeholder}>?</TVText>}
-    </View>
-  </View>
-)
+  )
+}
 
 const styles: Record<string, ViewStyle | TextStyle | ImageStyle> = {
   root: {
-    minHeight: tvSize(300),
-    borderRadius: tvTokens.radiusXl,
-    padding: tvSize(32),
     flexDirection: 'row',
-    overflow: 'hidden',
-    backgroundColor: 'rgba(255,255,255,0.075)',
-    borderWidth: 1,
-    borderColor: tvColors.border,
   },
   copy: {
     flex: 1,
     justifyContent: 'center',
-    paddingRight: tvSize(30),
   },
   kicker: {
     color: tvColors.primaryHigh,
@@ -71,6 +71,11 @@ const styles: Record<string, ViewStyle | TextStyle | ImageStyle> = {
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(145,164,196,0.18)',
+    shadowColor: '#000',
+    shadowOpacity: 0.45,
+    shadowRadius: tvSize(28),
+    shadowOffset: { width: 0, height: tvSize(14) },
+    elevation: 14,
   },
   cover: {
     width: '100%',

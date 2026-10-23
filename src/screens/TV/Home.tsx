@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef, useState, type ComponentRef } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from 'react'
 import { ScrollView, View, findNodeHandle, type ViewStyle } from 'react-native'
 import TVAppleScaffold from '@/components/TV/TVAppleScaffold'
 import TVTopTabs from '@/components/TV/TVTopTabs'
@@ -6,7 +6,6 @@ import TVHeroShelf from '@/components/TV/TVHeroShelf'
 import TVShelf from '@/components/TV/TVShelf'
 import TVPosterCard from '@/components/TV/TVPosterCard'
 import TVButton from '@/components/TV/TVButton'
-import TVText from '@/components/TV/TVText'
 import type Focusable from '@/components/TV/Focusable'
 import { tvColors, tvSize } from '@/theme/tv'
 import { setComponentId } from '@/core/common'
@@ -37,6 +36,10 @@ function TVHome({ componentId }: { componentId: string }) {
   const searchFocus = useTVFocusRef()
   const firstCardFocus = useTVFocusRef()
   const contentScrollRef = useRef<ComponentRef<typeof ScrollView>>(null)
+  // 内容区实测高度（顶栏以下、上下页边距以内）。TV 屏高差异很大（720p/1080p/4K、
+  // 不同 density 下逻辑高度能差一倍），固定尺寸必然在某些屏上把歌单架顶出屏幕，
+  // 所以首页按实测高度等比压缩 hero + 歌单架，保证一屏放得下、不需要下滑。
+  const [contentHeight, setContentHeight] = useState(0)
   const activeTabFocus = useRef<FocusNode>(null)
   const cardRefs = useRef<FocusRefMap>({})
   const sectionOffsetRef = useRef({ hero: 0, songlists: 0 })
@@ -156,6 +159,23 @@ function TVHome({ componentId }: { componentId: string }) {
     pushTVDetailScreen(componentId, { type: 'songlist', id: songlist.id, source: songlist.source, title: songlist.name, subtitle: songlist.desc ?? songlist.author, songlist })
   }
 
+  // 一屏布局：设计稿里 hero(≈280) + 歌单架(≈310) 在 720p 逻辑高度下正好占满，
+  // 换算成 tvSize 约 680。短屏（如 960×540dp 的 1080p 电视/模拟器）按实测内容高度
+  // 等比压缩，长屏保持 1 不放大。下限 0.5 防止极端小窗把字压到看不清。
+  const contentScale = useMemo(() => {
+    if (!contentHeight) return 1
+    return Math.max(0.5, Math.min(1, contentHeight / tvSize(680)))
+  }, [contentHeight])
+  // 紧凑模式（屏幕矮）下省掉卡片第三行播放量：两行文字足够识别，
+  // 省下的高度让给封面和标题，比把三行全挤成小字更好认。
+  const compactCards = contentScale < 0.95
+  const z = useCallback((value: number) => Math.max(1, Math.round(value * contentScale)), [contentScale])
+  const heroButtonStyle = useMemo(() => ({
+    minHeight: z(tvSize(54)),
+    paddingHorizontal: z(tvSize(26)),
+    paddingVertical: z(tvSize(14)),
+  }), [z])
+
   const heroTitle = musicInfo.name || tvText.livingRoom
   const heroSubtitle = musicInfo.id
     ? `${musicInfo.singer || tvText.unknownSinger}${dot}${isPlay ? tvText.playing : tvText.paused}`
@@ -167,35 +187,37 @@ function TVHome({ componentId }: { componentId: string }) {
   return (
     <TVAppleScaffold image={musicInfo.pic}>
       <TVTopTabs items={createTVTabs(componentId, 'home')} activeId="home" hasTVPreferredFocus nextFocusDown={playFocus.getNodeHandle() ?? undefined} activeTabRef={activeTabFocus as any} onActiveTabReady={queueFocusRefresh} />
-      <ScrollView ref={contentScrollRef} showsVerticalScrollIndicator={false}>
+      <ScrollView ref={contentScrollRef} style={styles.contentScroll} showsVerticalScrollIndicator={false} onLayout={event => {
+        const height = Math.round(event.nativeEvent.layout.height)
+        setContentHeight(prev => prev === height ? prev : height)
+      }}>
         <View onLayout={event => { sectionOffsetRef.current.hero = event.nativeEvent.layout.y }}>
-          <TVHeroShelf kicker={tvText.todayRecommend} title={heroTitle} subtitle={heroSubtitle} image={musicInfo.pic}>
-            <TVButton ref={playFocus.ref as any} label={musicInfo.id ? '查看详情' : tvText.searchSong} tone="dark" onFocus={() => { scrollToHero() }} onTVFocusChange={handleHeroFocusChange} onPress={() => {
+          <TVHeroShelf kicker={tvText.todayRecommend} title={heroTitle} subtitle={heroSubtitle} image={musicInfo.pic} scale={contentScale}>
+            <TVButton ref={playFocus.ref as any} label={musicInfo.id ? '查看详情' : tvText.searchSong} tone="dark" style={heroButtonStyle} onFocus={() => { scrollToHero() }} onTVFocusChange={handleHeroFocusChange} onPress={() => {
               if (musicInfo.id) { pushTVPlayerScreen(componentId); return }
               pushTVSearchScreen(componentId)
             }} nextFocusUp={getActiveTabHandle() ?? undefined} nextFocusRight={searchFocus.getNodeHandle() ?? undefined} nextFocusDown={heroNextDownHandle ?? undefined} />
-            <TVButton ref={searchFocus.ref as any} label={tvText.search} tone="dark" onFocus={() => { scrollToHero() }} onTVFocusChange={handleHeroFocusChange} onPress={() => { pushTVSearchScreen(componentId) }} nextFocusUp={getActiveTabHandle() ?? undefined} nextFocusLeft={playFocus.getNodeHandle() ?? undefined} nextFocusDown={heroNextDownHandle ?? undefined} />
+            <TVButton ref={searchFocus.ref as any} label={tvText.search} tone="dark" style={heroButtonStyle} onFocus={() => { scrollToHero() }} onTVFocusChange={handleHeroFocusChange} onPress={() => { pushTVSearchScreen(componentId) }} nextFocusUp={getActiveTabHandle() ?? undefined} nextFocusLeft={playFocus.getNodeHandle() ?? undefined} nextFocusDown={heroNextDownHandle ?? undefined} />
           </TVHeroShelf>
         </View>
 
         <View onLayout={event => { sectionOffsetRef.current.songlists = event.nativeEvent.layout.y }}>
-          <TVShelf title={tvText.recommendSonglist} subtitle={songlistSource ? `${getSourceName(songlistSource)}` : tvText.loading}>
+          <TVShelf title={tvText.recommendSonglist} subtitle={songlistSource ? `${getSourceName(songlistSource)}` : tvText.loading} scale={contentScale}>
             {songlists.map((item, index) => {
               const key = `songlist_${item.source}_${item.id}`
               const nextKey = songlists[index + 1] ? `songlist_${songlists[index + 1].source}_${songlists[index + 1].id}` : null
               const prevKey = songlists[index - 1] ? `songlist_${songlists[index - 1].source}_${songlists[index - 1].id}` : null
-              return <TVPosterCard key={key} ref={getCardRefCallback(key, index === 0) as any} title={item.name} subtitle={item.author || tvText.songlist} meta={item.play_count ? `${item.play_count}` : tvText.openSonglist} image={item.img} size="medium" tint={index % 2 ? tvColors.purple : tvColors.primary} onFocus={() => { scrollToSonglists() }} onTVFocusChange={handleSonglistFocusChange} onPress={() => { openSonglist(item) }} nextFocusUp={getActiveTabHandle() ?? undefined} nextFocusLeft={getCardHandle(prevKey) ?? playFocus.getNodeHandle() ?? undefined} nextFocusRight={getCardHandle(nextKey) ?? getCardHandle(key) ?? undefined} nextFocusDown={getCardHandle(key) ?? undefined} />
+              return <TVPosterCard key={key} ref={getCardRefCallback(key, index === 0) as any} title={item.name} subtitle={item.author || tvText.songlist} meta={compactCards ? undefined : (item.play_count ? `${item.play_count}` : tvText.openSonglist)} image={item.img} size="medium" scale={contentScale} tint={index % 2 ? tvColors.purple : tvColors.primary} onFocus={() => { scrollToSonglists() }} onTVFocusChange={handleSonglistFocusChange} onPress={() => { openSonglist(item) }} nextFocusUp={getActiveTabHandle() ?? undefined} nextFocusLeft={getCardHandle(prevKey) ?? playFocus.getNodeHandle() ?? undefined} nextFocusRight={getCardHandle(nextKey) ?? getCardHandle(key) ?? undefined} nextFocusDown={getCardHandle(key) ?? undefined} />
             })}
           </TVShelf>
         </View>
-        <View style={styles.bottomSpace} />
       </ScrollView>
     </TVAppleScaffold>
   )
 }
 
 const styles: Record<string, ViewStyle | any> = {
-  bottomSpace: { height: 60 },
+  contentScroll: { flex: 1 },
 }
 
 export default memo(TVHome)
