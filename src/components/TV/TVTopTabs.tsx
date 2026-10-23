@@ -1,8 +1,8 @@
-import { forwardRef, memo, useRef, type ComponentProps, type ComponentRef, type MutableRefObject } from 'react'
+import { forwardRef, memo, useEffect, useRef, type ComponentProps, type ComponentRef, type MutableRefObject } from 'react'
 import { View, findNodeHandle, type TextStyle, type ViewStyle } from 'react-native'
 import Focusable from './Focusable'
 import TVText from './TVText'
-import { blurActiveTVTarget } from './tvFocusManager'
+import { blurActiveTVTarget, focusTVTargetByRef } from './tvFocusManager'
 import { tvColors, tvSize, tvTokens } from '@/theme/tv'
 
 export interface TVTabItem {
@@ -11,6 +11,51 @@ export interface TVTabItem {
   onPress: () => void
   /** 当前屏自己的 tab：按了不跳转也不 blur（blur 了焦点会悬空，观感是「按键失灵」） */
   noop?: boolean
+}
+
+/**
+ * 顶栏「焦点即切换」的进屏标记。
+ *
+ * 切换动作发生在旧页面的 tab 上，目标页需要知道「这次是顶部导航切过来的」，
+ * 才能把初始焦点交回自己的顶栏 tab —— 否则焦点会落到内容区，用户想继续左右
+ * 切下一个 tab 还得先按上键，体验上就变成「切一次就跳出导航条」。
+ *
+ * 用模块级变量而不是 navigation passProps：目标页在切换命令之后才挂载，
+ * 且 TVTopTabs 在六个页面里共用，集中在这里处理改动面最小。
+ */
+interface TabArrival {
+  id: string
+  at: number
+  consumed: boolean
+}
+
+// 标记过期时间：导航偶发失败时，旧标记不能在很久以后劫持别的页面焦点
+const ARRIVAL_TTL = 8000
+let tabArrival: TabArrival | null = null
+
+export const requestTabFocusOnArrival = (id: string) => {
+  tabArrival = { id, at: Date.now(), consumed: false }
+}
+
+/** 目标页挂载时消费一次，决定要不要把焦点拉回顶栏 */
+const consumeTabFocusArrival = (id: string) => {
+  if (!tabArrival || tabArrival.id !== id || tabArrival.consumed) return false
+  if (Date.now() - tabArrival.at > ARRIVAL_TTL) {
+    tabArrival = null
+    return false
+  }
+  tabArrival.consumed = true
+  return true
+}
+
+/** 页面里晚到的焦点补偿（如榜单首次加载完）用它判断要不要让位给顶栏 */
+export const isTabFocusArrival = (id: string) => {
+  if (!tabArrival || tabArrival.id !== id) return false
+  if (Date.now() - tabArrival.at > ARRIVAL_TTL) {
+    tabArrival = null
+    return false
+  }
+  return true
 }
 
 interface Props {
@@ -23,15 +68,27 @@ interface Props {
   onActiveTabReady?: () => void
 }
 
-const TabButton = forwardRef<any, ComponentProps<typeof Focusable> & { item: TVTabItem }>(({ item, ...props }, ref) => (
-  <Focusable ref={ref} style={styles.tab} focusStyle={styles.tabFocus} onPress={() => {
-    if (item.noop) return
+const TabButton = forwardRef<any, ComponentProps<typeof Focusable> & { item: TVTabItem, current: boolean }>(({ item, current, ...props }, ref) => {
+  const activate = () => {
+    if (current || item.noop === true) return
     blurActiveTVTarget()
     item.onPress()
-  }} {...props}>
-    <TVText variant="body" style={styles.tabText}>{item.label}</TVText>
-  </Focusable>
-))
+  }
+  return (
+    <Focusable
+      ref={ref}
+      style={styles.tab}
+      focusStyle={styles.tabFocus}
+      onPress={activate}
+      // 焦点落到哪个 tab 就直接切到哪个页面（老板需求 09-22），不用再按 OK 确认。
+      // current 的 tab 不切：详情页内容按上键会回到「当前 tab」，若也切就会原地重开一页
+      onTVFocusChange={focused => { if (focused) activate() }}
+      {...props}
+    >
+      <TVText variant="body" style={styles.tabText}>{item.label}</TVText>
+    </Focusable>
+  )
+})
 
 type TabNode = ComponentRef<typeof Focusable> | null
 
@@ -50,6 +107,32 @@ const TVTopTabs = ({ items, activeId, subtitle, hasTVPreferredFocus, nextFocusDo
     const node = tabRefs.current[item.id]
     return node ? findNodeHandle(node) : null
   }
+
+  // 顶栏切换进来的页面：把焦点还给当前 tab，方便用户继续左右切下一个。
+  // 必须抢在 focusManager 的初始焦点调度（注册 preferred 后 260ms）之前出手——
+  // 一旦 tab 成为活动焦点，那次 preferred 调度就会让路，内容区不会先亮一下再跳回来。
+  useEffect(() => {
+    if (!consumeTabFocusArrival(activeId)) return
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | null = null
+    let retries = 0
+    const focusTab = () => {
+      if (cancelled) return
+      const node = tabRefs.current[activeId]
+      if (!node) return
+      void focusTVTargetByRef(node).then(ok => {
+        // 布局/测量还没就绪时重试几次；成功后不再干预，免得抢走用户已经移走的焦点
+        if (cancelled || ok || retries >= 4) return
+        retries++
+        timer = setTimeout(focusTab, 140)
+      })
+    }
+    timer = setTimeout(focusTab, 140)
+    return () => {
+      cancelled = true
+      if (timer) clearTimeout(timer)
+    }
+  }, [activeId])
 
   return (
     <View style={styles.root}>
@@ -73,6 +156,7 @@ const TVTopTabs = ({ items, activeId, subtitle, hasTVPreferredFocus, nextFocusDo
               }
             }}
             item={item}
+            current={item.id === activeId}
             hasTVPreferredFocus={hasTVPreferredFocus && index === activeIndex}
             nextFocusLeft={getHandle(index - 1) ?? undefined}
             nextFocusRight={getHandle(index + 1) ?? undefined}

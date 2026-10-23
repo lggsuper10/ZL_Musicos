@@ -1,7 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState, type ComponentRef } from 'react'
 import { FlatList, ScrollView, View, findNodeHandle, type TextStyle, type ViewStyle } from 'react-native'
 import TVAppleScaffold from '@/components/TV/TVAppleScaffold'
-import TVTopTabs from '@/components/TV/TVTopTabs'
+import TVTopTabs, { isTabFocusArrival } from '@/components/TV/TVTopTabs'
 import TVText from '@/components/TV/TVText'
 import TVButton from '@/components/TV/TVButton'
 import TVFadeOverlay from '@/components/TV/TVFadeOverlay'
@@ -75,10 +75,11 @@ function TVHistory({ componentId }: { componentId: string }) {
         setLoadingText(result.length ? '' : tvText.noAvailableCharts)
         // 焦点引擎已改为「preferred 不抢仍挂载的活动焦点」：榜单行是异步挂载的 preferred，
         // 冷加载慢时进屏初始焦点已落在顶部导航、晚到的 preferred 不再抢到首行——首次加载
-        // 成功后显式补偿。切源不补偿：焦点留在源 Tab 方便连续对比，与旧版由用户自己下键一致
+        // 成功后显式补偿。切源不补偿：焦点留在源 Tab 方便连续对比，与旧版由用户自己下键一致。
+        // 从顶部导航切进来时也不补偿：焦点要留在导航条上，方便继续左右切下一个 tab
         if (!initialFocusDoneRef.current && result.length) {
           initialFocusDoneRef.current = true
-          requestAnimationFrame(() => { void focusTVTargetByRef(firstBoardFocus.ref.current) })
+          if (!isTabFocusArrival('new')) requestAnimationFrame(() => { void focusTVTargetByRef(firstBoardFocus.ref.current) })
         }
       } catch (err: unknown) {
         if (!mounted) return

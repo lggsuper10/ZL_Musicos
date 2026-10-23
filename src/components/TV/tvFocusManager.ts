@@ -55,7 +55,10 @@ const isVisibleRect = (rect: FocusRect | null): rect is FocusRect => {
 const requestNativeFocus = (target: FocusTarget) => {
   const tag = target.ref ? findNodeHandle(target.ref) : null
   if (tag) requestTVFocus(tag)
-  target.ref?.focus?.()
+  // 不要再调 target.ref.focus()：它走 RN 的 dispatchViewManagerCommand，view 一旦
+  // 在测量与调用之间被导航切换卸载，会抛 "focus on view with tag ... does not exist"，
+  // 这是异步抛到 UI 线程的错误，JS 层 try/catch 接不住（顶部导航焦点即切换时频发）。
+  // requestTVFocus 走 UIBlock + resolveView，内部已经兜住异常。
 }
 
 const emitFocusState = (id: number | null, focused: boolean) => {
@@ -71,6 +74,9 @@ const clearActiveTarget = () => {
 export const blurActiveTVTarget = clearActiveTarget
 
 const setActiveTarget = (target: FocusTarget) => {
+  // 测量是异步的：等 measureInWindow 回来时页面可能已被导航切换卸载，
+  // 目标已从 targets 移除。此时再对死 view 发 focus，原生会抛 "view does not exist"
+  if (!targets.has(target.id)) return
   if (activeTargetId && activeTargetId !== target.id) emitFocusState(activeTargetId, false)
   activeTargetId = target.id
   emitFocusState(target.id, true)

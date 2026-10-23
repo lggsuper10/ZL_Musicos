@@ -1,5 +1,4 @@
-import { popToRoot } from '@/navigation'
-import { pushTVHistoryScreen, pushTVMyListScreen, pushTVQueueScreen, pushTVSearchScreen, pushTVSettingsScreen } from '@/navigation/navigation'
+import { switchTVTab } from '@/navigation/navigation'
 import type { TVTabItem } from '@/components/TV/TVTopTabs'
 import { dot, tvText } from './labels'
 
@@ -22,15 +21,18 @@ const sourceNames: Record<string, string> = {
 
 /**
  * 顶部导航 tab。currentId 传当前屏自己的 tab id：该 tab 标记 noop（不跳转、不 blur），
- * 否则会把同屏再压一层、返回键要多按一次（Queue 页按「播放列表」实测复现）
+ * 否则会把同屏再压一层、返回键要多按一次（Queue 页按「播放列表」实测复现）。
+ *
+ * 切页统一走 switchTVTab：焦点移到 tab 上就会自动切（不用按 OK），并且用的是
+ * 「回首页再 push」而不是直接 push，避免一路扫过 tab 时叠出一串返回栈。
  */
 export const createTVTabs = (componentId: string, currentId?: string): TVTabItem[] => [
-  { id: 'home', label: tvText.recommend, noop: currentId === 'home', onPress: () => { void popToRoot(componentId) } },
-  { id: 'new', label: tvText.charts, noop: currentId === 'new', onPress: () => { pushTVHistoryScreen(componentId) } },
-  { id: 'mylist', label: tvText.mySonglists, noop: currentId === 'mylist', onPress: () => { pushTVMyListScreen(componentId) } },
-  { id: 'search', label: tvText.search, noop: currentId === 'search', onPress: () => { pushTVSearchScreen(componentId) } },
-  { id: 'queue', label: '播放列表', noop: currentId === 'queue', onPress: () => { pushTVQueueScreen(componentId) } },
-  { id: 'settings', label: tvText.settings, noop: currentId === 'settings', onPress: () => { pushTVSettingsScreen(componentId) } },
+  { id: 'home', label: tvText.recommend, noop: currentId === 'home', onPress: () => { switchTVTab(componentId, 'home') } },
+  { id: 'new', label: tvText.charts, noop: currentId === 'new', onPress: () => { switchTVTab(componentId, 'new') } },
+  { id: 'mylist', label: tvText.mySonglists, noop: currentId === 'mylist', onPress: () => { switchTVTab(componentId, 'mylist') } },
+  { id: 'search', label: tvText.search, noop: currentId === 'search', onPress: () => { switchTVTab(componentId, 'search') } },
+  { id: 'queue', label: '播放列表', noop: currentId === 'queue', onPress: () => { switchTVTab(componentId, 'queue') } },
+  { id: 'settings', label: tvText.settings, noop: currentId === 'settings', onPress: () => { switchTVTab(componentId, 'settings') } },
 ]
 
 export const normalizeMusicInfo = (musicInfo?: LX.Player.PlayMusic | LX.Player.MusicInfo | LX.Music.MusicInfo | null) => {
