@@ -5,7 +5,6 @@ import TVTopTabs from '@/components/TV/TVTopTabs'
 import TVText from '@/components/TV/TVText'
 import TVButton from '@/components/TV/TVButton'
 import TVMusicRow from '@/components/TV/TVMusicRow'
-import TVGlassPanel from '@/components/TV/TVGlassPanel'
 import TVSearchKeyboard from '@/components/TV/TVSearchKeyboard'
 import Focusable from '@/components/TV/Focusable'
 import { tvColors, tvFont, tvSize } from '@/theme/tv'
@@ -265,52 +264,60 @@ function TVSearch({ componentId }: { componentId: string }) {
   const suggestions: HotSearchItem[] = matchHotSearch(text)
   const showSuggest = suggestions.length > 0
   const displayItems: HotSearchItem[] = showSuggest ? suggestions : hotWords.map(word => ({ keyword: word, label: word, pinyin: word, abbr: word }))
-  const firstHotHandle = getHotHandle(displayItems[0]?.label) ?? undefined
-  const lastHotHandle = getHotHandle(displayItems[displayItems.length - 1]?.label) ?? firstHotHandle
+  // 左栏竖屏空间只够一行关键词 chip：热门搜索和搜索历史同时显示会把虚拟键盘挤出屏幕
+  // （1080p 实测溢出约 90dp，最后一行按键点不到）。所以同一块位置只能显示一组：
+  // 输入时有「猜你想搜」优先展示，否则有历史显示历史，都没有才回落到热门搜索。
+  const usingHistory = !showSuggest && searchHistory.length > 0
+  const chipCount = usingHistory ? searchHistory.length : displayItems.length
+  const getChipHandleAt = (index: number) => {
+    if (index < 0 || index >= chipCount) return undefined
+    return (usingHistory ? getHistoryHandle(searchHistory[index]) : getHotHandle(displayItems[index]?.label)) ?? undefined
+  }
+  const firstHotHandle = getChipHandleAt(0)
+  const lastHotHandle = getChipHandleAt(chipCount - 1) ?? firstHotHandle
   const searchButtonHandle = searchButtonFocus.getNodeHandle() ?? undefined
   const firstResultHandle = firstResultFocus.getNodeHandle() ?? undefined
   const keyboardHandle = getKeyboardHandle() ?? undefined
   const keyboardTopRowFocusUps = Array.from({ length: 10 }, (_, colIndex) => {
-    const hotIndex = Math.min(displayItems.length - 1, Math.floor(colIndex * displayItems.length / 10))
-    return getHotHandle(displayItems[hotIndex]?.label) ?? lastHotHandle
+    const chipIndex = Math.min(chipCount - 1, Math.floor(colIndex * chipCount / 10))
+    return getChipHandleAt(chipIndex) ?? lastHotHandle
   })
 
   return (
     <TVAppleScaffold image={musicInfo.pic}>
       <TVTopTabs items={createTVTabs(componentId, 'search')} activeId="search" nextFocusDown={getInputHandle() ?? searchButtonHandle} activeTabRef={activeTabFocus} onActiveTabReady={queueFocusRefresh} />
       <View style={styles.root}>
-        <TVGlassPanel style={styles.leftPanel}>
-          <TVText variant="pageTitle" style={styles.pageTitle}>{tvText.searchTitle}</TVText>
+        <View style={styles.leftColumn}>
+          <View style={styles.pageHeader}>
+            <TVText variant="pageTitle" style={styles.pageTitle}>{tvText.searchTitle}</TVText>
+            <TVText variant="caption" color={tvColors.dimText} style={styles.pageHint} numberOfLines={1}>输入歌名、歌手或专辑，按 OK 搜索</TVText>
+          </View>
           <View style={styles.inputRow}>
             <TVTextInput ref={inputRef} value={text} onChangeText={setText} placeholder={tvText.searchPlaceholder} placeholderTextColor={tvColors.dimText} style={styles.input} nextFocusUp={getActiveTabHandle() ?? undefined} nextFocusRight={searchButtonHandle} nextFocusDown={firstHotHandle} onSubmitEditing={() => { void handleSearch() }} />
             <TVButton ref={searchButtonFocus.ref as any} label={loading ? tvText.searching : tvText.search} tone="dark" onPress={() => { void handleSearch() }} hasTVPreferredFocus nextFocusLeft={getInputHandle() ?? undefined} nextFocusRight={firstResultHandle} nextFocusDown={firstHotHandle} />
           </View>
-          <TVText variant="cardTitle" style={styles.blockTitle}>{showSuggest ? '猜你想搜' : tvText.hotSearch}</TVText>
+          <TVText variant="cardTitle" style={styles.blockTitle}>{showSuggest ? '猜你想搜' : usingHistory ? '搜索历史' : tvText.hotSearch}</TVText>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.hotWrap} contentContainerStyle={styles.hotContent}>
-            {displayItems.map((item, index) => (
-              <Focusable key={item.label} ref={bindHotRef(item.label) as any} style={showSuggest ? [styles.hotItem, styles.suggestItem] : styles.hotItem} onPress={() => { void handleSearch(1, item.keyword) }} nextFocusLeft={getHotHandle(displayItems[index - 1]?.label) ?? undefined} nextFocusRight={getHotHandle(displayItems[index + 1]?.label) ?? firstResultHandle} nextFocusUp={getInputHandle() ?? searchButtonHandle} nextFocusDown={keyboardHandle}>
-                <TVText variant="body">{item.label}</TVText>
-              </Focusable>
-            ))}
-          </ScrollView>
-          {searchHistory.length > 0 && (
-            <>
-              <TVText variant="cardTitle" style={styles.blockTitle}>搜索历史</TVText>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.hotWrap} contentContainerStyle={styles.hotContent}>
-                {searchHistory.map((kw, index) => (
-                  <Focusable key={`hist_${kw}`} ref={bindHistoryRef(kw) as any} style={styles.hotItem} onPress={() => { void handleSearch(1, kw) }} onLongPress={() => { removeHistory(kw) }} nextFocusLeft={getHistoryHandle(searchHistory[index - 1]) ?? lastHotHandle} nextFocusRight={getHistoryHandle(searchHistory[index + 1]) ?? clearHistoryFocus.getNodeHandle()} nextFocusUp={lastHotHandle} nextFocusDown={keyboardHandle}>
-                    <TVText variant="body">{kw}</TVText>
-                  </Focusable>
-                ))}
-                <Focusable ref={clearHistoryFocus.ref as any} style={styles.hotItem} onPress={() => { clearHistory() }} nextFocusLeft={getHistoryHandle(searchHistory[searchHistory.length - 1]) ?? lastHotHandle} nextFocusRight={firstResultHandle} nextFocusUp={lastHotHandle} nextFocusDown={keyboardHandle}>
-                  <TVText variant="body" color={tvColors.warn}>清空历史</TVText>
+            {usingHistory
+              ? searchHistory.map((kw, index) => (
+                <Focusable key={`hist_${kw}`} ref={bindHistoryRef(kw) as any} style={styles.hotItem} onPress={() => { void handleSearch(1, kw) }} onLongPress={() => { removeHistory(kw) }} nextFocusLeft={getHistoryHandle(searchHistory[index - 1]) ?? getHistoryHandle(kw) ?? undefined} nextFocusRight={getHistoryHandle(searchHistory[index + 1]) ?? clearHistoryFocus.getNodeHandle() ?? firstResultHandle} nextFocusUp={getInputHandle() ?? searchButtonHandle} nextFocusDown={keyboardHandle}>
+                  <TVText variant="body">{kw}</TVText>
                 </Focusable>
-              </ScrollView>
-            </>
-          )}
+              ))
+              : displayItems.map((item, index) => (
+                <Focusable key={item.label} ref={bindHotRef(item.label) as any} style={showSuggest ? [styles.hotItem, styles.suggestItem] : styles.hotItem} onPress={() => { void handleSearch(1, item.keyword) }} nextFocusLeft={getHotHandle(displayItems[index - 1]?.label) ?? undefined} nextFocusRight={getHotHandle(displayItems[index + 1]?.label) ?? firstResultHandle} nextFocusUp={getInputHandle() ?? searchButtonHandle} nextFocusDown={keyboardHandle}>
+                  <TVText variant="body">{item.label}</TVText>
+                </Focusable>
+              ))}
+            {usingHistory ? (
+              <Focusable ref={clearHistoryFocus.ref as any} style={styles.hotItem} onPress={() => { clearHistory() }} nextFocusLeft={getHistoryHandle(searchHistory[searchHistory.length - 1]) ?? lastHotHandle} nextFocusRight={firstResultHandle} nextFocusUp={getInputHandle() ?? searchButtonHandle} nextFocusDown={keyboardHandle}>
+                <TVText variant="body" color={tvColors.warn}>清空历史</TVText>
+              </Focusable>
+            ) : null}
+          </ScrollView>
           <TVSearchKeyboard firstKeyRef={firstKeyboardKeyFocus} onFirstKeyReady={queueFocusRefresh} onKeyPress={handleKeyboardKey} onBackspace={handleKeyboardBackspace} onClear={handleKeyboardClear} onSubmit={handleKeyboardSubmit} nextFocusUp={lastHotHandle} topRowFocusUpTargets={keyboardTopRowFocusUps} nextFocusRight={firstResultHandle} />
-        </TVGlassPanel>
-        <TVGlassPanel style={styles.resultPanel}>
+        </View>
+        <View style={styles.resultColumn}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.sourceTabWrap} contentContainerStyle={styles.sourceTabContent}>
             {sourceTabs.map((tab, index) => (
               <Focusable
@@ -354,25 +361,29 @@ function TVSearch({ componentId }: { componentId: string }) {
               return <TVMusicRow ref={bindResultRef(itemKey, index === 0) as any} hasTVPreferredFocus={index === 0 && !!results.length} index={index} title={item.name} subtitle={getMusicSubtitle(item)} meta={item.interval} onFocus={() => { handleResultFocus(index) }} onPress={() => { void handleOpenPlayer(item) }} nextFocusLeft={searchButtonHandle} nextFocusUp={index === 0 ? playAllFocus.getNodeHandle() ?? searchButtonHandle : (getResultHandle(prevKey) ?? undefined)} nextFocusDown={getResultHandle(nextKey) ?? (hasMore && index === results.length - 1 ? loadMoreFocus.getNodeHandle() ?? undefined : undefined)} />
             }}
           />
-        </TVGlassPanel>
+        </View>
       </View>
     </TVAppleScaffold>
   )
 }
 
 const styles: Record<string, ViewStyle | TextStyle | any> = {
-  root: { flex: 1, flexDirection: 'row', gap: tvSize(24) },
-  leftPanel: { width: tvSize(420), paddingHorizontal: tvSize(30), paddingVertical: tvSize(18) },
+  root: { flex: 1, flexDirection: 'row', gap: tvSize(26) },
+  // 左右两栏都直接落在背景上（不再套一层玻璃面板），与首页/我的歌单同一套版式：
+  // 标题按标题大小，内容按内容大小，分隔靠留白而不是边框。
+  leftColumn: { width: tvSize(420), flexShrink: 0 },
+  resultColumn: { flex: 1, minWidth: 0 },
+  pageHeader: { marginBottom: tvSize(12) },
   pageTitle: { fontSize: tvFont(34), lineHeight: tvFont(40) },
-  inputRow: { flexDirection: 'row', gap: tvSize(12), marginTop: tvSize(12) },
+  pageHint: { marginTop: tvSize(6) },
+  inputRow: { flexDirection: 'row', gap: tvSize(12) },
   input: { flex: 1, minHeight: tvSize(46), color: tvColors.text, backgroundColor: 'rgba(255,255,255,0.10)', borderRadius: tvSize(20), paddingHorizontal: tvSize(16), fontSize: tvFont(17), borderWidth: 1, borderColor: tvColors.border },
   blockTitle: { marginTop: tvSize(12), fontSize: tvFont(20) },
   hotWrap: { marginTop: tvSize(8), marginBottom: tvSize(12), minHeight: tvSize(40), flexGrow: 0 },
   hotContent: { flexDirection: 'row', gap: tvSize(8), alignItems: 'center', minHeight: tvSize(40), paddingRight: tvSize(8) },
   hotItem: { minHeight: tvSize(32), borderRadius: 999, paddingHorizontal: tvSize(13), alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.10)', borderWidth: 1, borderColor: tvColors.border },
   suggestItem: { backgroundColor: 'rgba(122,162,247,0.16)', borderColor: tvColors.primaryHigh },
-  resultPanel: { flex: 1, paddingHorizontal: tvSize(30), paddingVertical: tvSize(26), backgroundColor: 'rgba(10,13,21,0.96)' },
-  resultHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: tvSize(12), minHeight: tvSize(44) },
+  resultHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginTop: tvSize(8), marginBottom: tvSize(12), minHeight: tvSize(44) },
   resultContent: { paddingBottom: tvSize(20) },
   footer: { alignItems: 'center', paddingVertical: tvSize(18) },
   line: { marginTop: tvSize(8) },

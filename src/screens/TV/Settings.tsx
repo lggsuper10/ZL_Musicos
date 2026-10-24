@@ -4,10 +4,9 @@ import TVAppleScaffold from '@/components/TV/TVAppleScaffold'
 import TVTopTabs from '@/components/TV/TVTopTabs'
 import TVText from '@/components/TV/TVText'
 import TVButton from '@/components/TV/TVButton'
-import TVSettingsPane from '@/components/TV/TVSettingsPane'
 import { showTVDialog, type TVDialogButtonConfig } from '@/components/TV/TVDialog'
 import Focusable from '@/components/TV/Focusable'
-import { tvColors, tvSize } from '@/theme/tv'
+import { tvColors, tvFont, tvSize, tvTokens } from '@/theme/tv'
 import { useSettingValue } from '@/store/setting/hook'
 import { usePlayerMusicInfo } from '@/store/player/hook'
 import { useMyList } from '@/store/list/hook'
@@ -585,68 +584,82 @@ function TVSettings({ componentId }: { componentId: string }) {
 
   return (
     <TVAppleScaffold image={musicInfo.pic}>
-      <TVTopTabs items={createTVTabs(componentId, 'settings')} activeId="settings" subtitle={tvText.settings} nextFocusDown={lanButtonFocus.getNodeHandle() ?? firstSourceFocus.getNodeHandle() ?? undefined} activeTabRef={activeTabFocus} onActiveTabReady={settingsFocusRefresh} />
+      <TVTopTabs items={createTVTabs(componentId, 'settings')} activeId="settings" nextFocusDown={firstSourceFocus.getNodeHandle() ?? lanButtonFocus.getNodeHandle() ?? undefined} activeTabRef={activeTabFocus} onActiveTabReady={settingsFocusRefresh} />
       <View style={styles.root}>
-        <TVSettingsPane title={`${tvText.source}${dot}${tvText.userApi}`} subtitle={tvText.sourceSettingsDesc} style={styles.sourcePanel}>
-          <TVText variant="caption" color={tvColors.dimText} style={styles.listHint}>OK 键使用音源 · 长按 OK 键删除/管理</TVText>
-          <ScrollView ref={sourceScrollRef} style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={styles.sourceContent}>
-            {allSources.map((src, index) => {
-              const focusKey = getFocusKey(src.id)
-              const prevSourceId = allSources[index - 1]?.id
-              const nextSourceId = allSources[index + 1]?.id
-              const active = apiSource === src.id
-              return (
-                <View key={focusKey} style={styles.sourceBlock} onLayout={event => { sourceLayoutRef.current[focusKey] = event.nativeEvent.layout.y }}>
-                  <Focusable
-                    ref={bindFocusRef(sourceRefs, focusKey, index === 0) as any}
-                    style={[styles.sourceItem, active ? styles.sourceActive : null]}
-                    onFocus={() => { handleSourceItemFocus(focusKey) }}
-                    onPress={() => { setApiSource(src.id) }}
-                    onLongPress={() => { showSourceActionMenu(src) }}
-                    hasTVPreferredFocus={index === 0}
-                    nextFocusUp={index === 0 ? getActiveTabHandle() ?? undefined : getSourceHandle(prevSourceId) ?? undefined}
-                    nextFocusRight={updateButtonFocus.getNodeHandle() ?? lanButtonFocus.getNodeHandle() ?? undefined}
-                    nextFocusDown={getSourceHandle(nextSourceId) ?? undefined}
-                  >
-                    <View style={styles.sourceRow}>
-                      <View style={styles.sourceInfo}>
-                        <TVText variant="cardTitle" numberOfLines={1}>{src.name}</TVText>
-                        <TVText variant="caption" style={styles.line} numberOfLines={1}>{src.desc ?? (src.id || tvText.defaultSource)}</TVText>
+        <View style={styles.pageHeader}>
+          <TVText variant="pageTitle" style={styles.pageTitle}>{tvText.settings}</TVText>
+          <TVText variant="caption" color={tvColors.dimText} style={styles.pageHint} numberOfLines={1}>音源、应用更新与手机扫码导入</TVText>
+        </View>
+        <View style={styles.body}>
+          <View style={styles.sourceColumn}>
+            <TVText variant="sectionTitle" style={styles.sectionTitle}>{`${tvText.source}${dot}${tvText.userApi}`}</TVText>
+            <TVText variant="caption" color={tvColors.dimText} style={styles.sectionDesc} numberOfLines={2}>{tvText.sourceSettingsDesc}</TVText>
+            <TVText variant="caption" color={tvColors.dimText} style={styles.listHint}>OK 键使用音源 · 长按 OK 键删除/管理</TVText>
+            <ScrollView ref={sourceScrollRef} style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={styles.sourceContent}>
+              {allSources.map((src, index) => {
+                const focusKey = getFocusKey(src.id)
+                const prevSourceId = allSources[index - 1]?.id
+                const nextSourceId = allSources[index + 1]?.id
+                const active = apiSource === src.id
+                return (
+                  <View key={focusKey} style={styles.sourceBlock} onLayout={event => { sourceLayoutRef.current[focusKey] = event.nativeEvent.layout.y }}>
+                    <Focusable
+                      ref={bindFocusRef(sourceRefs, focusKey, index === 0) as any}
+                      style={[styles.sourceItem, active ? styles.sourceActive : null]}
+                      onFocus={() => { handleSourceItemFocus(focusKey) }}
+                      onPress={() => { setApiSource(src.id) }}
+                      onLongPress={() => { showSourceActionMenu(src) }}
+                      hasTVPreferredFocus={index === 0}
+                      nextFocusUp={index === 0 ? getActiveTabHandle() ?? undefined : getSourceHandle(prevSourceId) ?? undefined}
+                      nextFocusRight={updateButtonFocus.getNodeHandle() ?? lanButtonFocus.getNodeHandle() ?? undefined}
+                      nextFocusDown={getSourceHandle(nextSourceId) ?? undefined}
+                    >
+                      <View style={styles.sourceRow}>
+                        <View style={styles.sourceInfo}>
+                          <TVText variant="cardTitle" numberOfLines={1}>{src.name}</TVText>
+                          <TVText variant="caption" style={styles.line} numberOfLines={1}>{src.desc ?? (src.id || tvText.defaultSource)}</TVText>
+                        </View>
+                        <TVText variant="caption" color={active ? tvColors.primaryHigh : tvColors.subtext}>{active ? tvText.currentUsing : src.status ?? ''}</TVText>
                       </View>
-                      <TVText variant="caption" color={active ? tvColors.primaryHigh : tvColors.subtext}>{active ? tvText.currentUsing : src.status ?? ''}</TVText>
-                    </View>
-                  </Focusable>
-                </View>
-              )
-            })}
-          </ScrollView>
-        </TVSettingsPane>
+                    </Focusable>
+                  </View>
+                )
+              })}
+            </ScrollView>
+          </View>
 
-        <ScrollView ref={rightScrollRef} style={styles.rightColumn} showsVerticalScrollIndicator={false} contentContainerStyle={styles.rightContent}>
-          <TVSettingsPane title={tvText.appUpdate} subtitle={tvText.appUpdateDesc} style={styles.updatePanel}>
-            <View style={styles.updateMeta}>
-              <TVText variant="caption" color={tvColors.subtext} numberOfLines={1}>{tvText.currentVersion}{dot}v{TV_CURRENT_VERSION}</TVText>
-              {updateInfo ? <TVText variant="caption" color={tvColors.primaryHigh} numberOfLines={1}>{tvText.latestVersion}{dot}v{updateInfo.version}</TVText> : null}
-              {updateInfo ? <TVText variant="caption" color={tvColors.subtext} numberOfLines={1}>{tvText.updatePackage}{dot}{updateInfo.asset.abi}{dot}{formatUpdateSize(updateInfo.asset.size)}</TVText> : null}
-              {updateProgressText ? <TVText variant="caption" color={tvColors.subtext} numberOfLines={1}>{tvText.downloadProgress}{dot}{updateProgressText}</TVText> : null}
-            </View>
-            <TVButton ref={updateButtonFocus.ref as any} label={updateButtonLabel} tone={updateStatus === 'available' || updateStatus === 'downloaded' ? 'primary' : 'dark'} onPress={() => { void handleUpdatePress() }} nextFocusLeft={firstSourceFocus.getNodeHandle() ?? undefined} nextFocusDown={lanButtonFocus.getNodeHandle() ?? undefined} />
-            <TVText variant="caption" color={updateStatus === 'error' ? tvColors.warn : tvColors.primaryHigh} style={styles.message}>{updateMessage || tvText.installConfirmTip}</TVText>
-          </TVSettingsPane>
-
-          <TVSettingsPane title={tvText.importApi} subtitle={tvText.inputRemoteApi} style={styles.importPanel}>
-            {importMessage ? <TVText variant="caption" color={importMessage === tvText.importSuccess ? tvColors.primaryHigh : tvColors.warn} style={styles.message}>{importMessage}</TVText> : null}
-            {/* 手机扫码的结果放在按钮【上方】并且做成显眼的框：
-                旧位置在面板最下方，右栏内容一长就被顶出可视区、且导入结束时不会自动滚过去，
-                用户看不到「已导入 N 个歌单」，只能靠歌单卡有没有出现来猜 —— 这就是「没反应」的观感来源 */}
-            {lanMessage ? (
-              <View style={[styles.lanResult, lanMessageOk ? styles.lanResultOk : styles.lanResultWarn]}>
-                <TVText variant="body" color={lanMessageOk ? tvColors.primaryHigh : tvColors.warn}>{lanMessage}</TVText>
+          <ScrollView ref={rightScrollRef} style={styles.rightColumn} showsVerticalScrollIndicator={false} contentContainerStyle={styles.rightContent}>
+            <View>
+              <TVText variant="sectionTitle" style={styles.sectionTitle}>{tvText.appUpdate}</TVText>
+              <TVText variant="caption" color={tvColors.dimText} style={styles.sectionDesc}>{tvText.appUpdateDesc}</TVText>
+              <View style={styles.updateMeta}>
+                <TVText variant="caption" color={tvColors.subtext} numberOfLines={1}>{tvText.currentVersion}{dot}v{TV_CURRENT_VERSION}</TVText>
+                {updateInfo ? <TVText variant="caption" color={tvColors.primaryHigh} numberOfLines={1}>{tvText.latestVersion}{dot}v{updateInfo.version}</TVText> : null}
+                {updateInfo ? <TVText variant="caption" color={tvColors.subtext} numberOfLines={1}>{tvText.updatePackage}{dot}{updateInfo.asset.abi}{dot}{formatUpdateSize(updateInfo.asset.size)}</TVText> : null}
+                {updateProgressText ? <TVText variant="caption" color={tvColors.subtext} numberOfLines={1}>{tvText.downloadProgress}{dot}{updateProgressText}</TVText> : null}
               </View>
-            ) : null}
-            <TVButton ref={lanButtonFocus.ref as any} label={lanRunning ? '关闭二维码' : '手机扫码导入'} tone={lanRunning ? 'danger' : 'dark'} onPress={() => { void (lanRunning ? handleCloseLanImport() : handleOpenLanImport()) }} nextFocusUp={updateButtonFocus.getNodeHandle() ?? undefined} nextFocusLeft={firstSourceFocus.getNodeHandle() ?? undefined} />
-          </TVSettingsPane>
-        </ScrollView>
+              <TVButton ref={updateButtonFocus.ref as any} label={updateButtonLabel} tone={updateStatus === 'available' || updateStatus === 'downloaded' ? 'primary' : 'dark'} onPress={() => { void handleUpdatePress() }} nextFocusLeft={firstSourceFocus.getNodeHandle() ?? undefined} nextFocusDown={lanButtonFocus.getNodeHandle() ?? undefined} />
+              <TVText variant="caption" color={updateStatus === 'error' ? tvColors.warn : tvColors.primaryHigh} style={styles.message}>{updateMessage || tvText.installConfirmTip}</TVText>
+            </View>
+
+            <View style={styles.sectionDivider} />
+
+            <View>
+              <TVText variant="sectionTitle" style={styles.sectionTitle}>{tvText.importApi}</TVText>
+              <TVText variant="caption" color={tvColors.dimText} style={styles.sectionDesc}>{tvText.inputRemoteApi}</TVText>
+              {importMessage ? <TVText variant="caption" color={importMessage === tvText.importSuccess ? tvColors.primaryHigh : tvColors.warn} style={styles.message}>{importMessage}</TVText> : null}
+              {/* 手机扫码的结果放在按钮【上方】并且做成显眼的框：
+                  旧位置在面板最下方，右栏内容一长就被顶出可视区、且导入结束时不会自动滚过去，
+                  用户看不到「已导入 N 个歌单」，只能靠歌单卡有没有出现来猜 —— 这就是「没反应」的观感来源 */}
+              {lanMessage ? (
+                <View style={[styles.lanResult, lanMessageOk ? styles.lanResultOk : styles.lanResultWarn]}>
+                  <TVText variant="body" color={lanMessageOk ? tvColors.primaryHigh : tvColors.warn}>{lanMessage}</TVText>
+                </View>
+              ) : null}
+              <TVButton ref={lanButtonFocus.ref as any} label={lanRunning ? '关闭二维码' : '手机扫码导入'} tone={lanRunning ? 'danger' : 'dark'} onPress={() => { void (lanRunning ? handleCloseLanImport() : handleOpenLanImport()) }} nextFocusUp={updateButtonFocus.getNodeHandle() ?? undefined} nextFocusLeft={firstSourceFocus.getNodeHandle() ?? undefined} />
+            </View>
+          </ScrollView>
+        </View>
       </View>
       {/* 手机侧操作的结果弹窗统一走全局 showTVDialog（本页 Host 渲染），
           避免局部弹窗与其他全局弹窗叠加、双弹窗同时吃按键 */}
@@ -664,20 +677,27 @@ function TVSettings({ componentId }: { componentId: string }) {
 }
 
 const styles: Record<string, ViewStyle | TextStyle | any> = {
-  root: { flex: 1, flexDirection: 'row', gap: tvSize(26) },
-  sourcePanel: { flex: 1 },
+  // 与首页/我的歌单一致：页面直接落在背景上，不再用大面板把整栏圈起来，
+  // 分区靠标题 + 留白 + 细分隔线区分。
+  root: { flex: 1 },
+  pageHeader: { marginBottom: tvSize(22) },
+  pageTitle: { fontSize: tvFont(34), lineHeight: tvFont(40) },
+  pageHint: { marginTop: tvSize(6) },
+  body: { flex: 1, flexDirection: 'row', gap: tvSize(32) },
+  sourceColumn: { flex: 1, minWidth: 0 },
+  sectionTitle: { fontSize: tvTokens.railTitle, lineHeight: tvFont(32) },
+  sectionDesc: { marginTop: tvSize(4) },
   sourceContent: { paddingBottom: tvSize(20) },
   sourceBlock: { marginBottom: tvSize(12) },
   sourceItem: { borderRadius: tvSize(24), backgroundColor: 'rgba(255,255,255,0.075)', borderWidth: 1, borderColor: tvColors.border, padding: tvSize(18) },
   sourceActive: { backgroundColor: tvColors.primarySoft, borderColor: tvColors.primaryHigh },
   sourceRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: tvSize(16) },
   sourceInfo: { flex: 1 },
-  listHint: { marginBottom: tvSize(8) },
+  listHint: { marginTop: tvSize(14), marginBottom: tvSize(10) },
   rightColumn: { width: tvSize(430), flexShrink: 0 },
-  rightContent: { gap: tvSize(18), paddingBottom: tvSize(20) },
-  updatePanel: { minHeight: tvSize(270) },
-  updateMeta: { gap: tvSize(8), marginBottom: tvSize(18) },
-  importPanel: { flex: 1 },
+  rightContent: { paddingBottom: tvSize(20) },
+  sectionDivider: { height: 1, backgroundColor: tvColors.line, marginVertical: tvSize(22) },
+  updateMeta: { gap: tvSize(8), marginTop: tvSize(16), marginBottom: tvSize(18) },
   line: { marginTop: tvSize(9) },
   message: { marginTop: tvSize(14) },
   // 手机扫码结果框：放在按钮上方，带边框与底色，保证不用滚动就能看到

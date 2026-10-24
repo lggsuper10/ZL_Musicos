@@ -29,9 +29,9 @@ const sourceNames: Record<string, string> = {
 export const createTVTabs = (componentId: string, currentId?: string): TVTabItem[] => [
   { id: 'home', label: tvText.recommend, noop: currentId === 'home', onPress: () => { switchTVTab(componentId, 'home') } },
   { id: 'new', label: tvText.charts, noop: currentId === 'new', onPress: () => { switchTVTab(componentId, 'new') } },
+  { id: 'queue', label: '播放列表', noop: currentId === 'queue', onPress: () => { switchTVTab(componentId, 'queue') } },
   { id: 'mylist', label: tvText.mySonglists, noop: currentId === 'mylist', onPress: () => { switchTVTab(componentId, 'mylist') } },
   { id: 'search', label: tvText.search, noop: currentId === 'search', onPress: () => { switchTVTab(componentId, 'search') } },
-  { id: 'queue', label: '播放列表', noop: currentId === 'queue', onPress: () => { switchTVTab(componentId, 'queue') } },
   { id: 'settings', label: tvText.settings, noop: currentId === 'settings', onPress: () => { switchTVTab(componentId, 'settings') } },
 ]
 
