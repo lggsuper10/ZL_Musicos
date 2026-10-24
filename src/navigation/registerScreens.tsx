@@ -7,7 +7,6 @@ import {
   PlayDetail,
   SonglistDetail,
   Comment,
-  TVHome,
   TVPlayer,
   TVSearch,
   TVQueue,
@@ -18,6 +17,7 @@ import {
   TVRename,
 } from '@/screens'
 import { Provider } from '@/store/Provider'
+import TVShell from '@/screens/TV/Shell'
 import TVRemoteFocusController from '@/components/TV/TVRemoteFocusController'
 import { TVFocusScopeContext } from '@/components/TV/tvFocusManager'
 
@@ -69,7 +69,9 @@ export default () => {
   Navigation.registerComponent(VERSION_MODAL, () => WrappedComponent(VersionModal))
   Navigation.registerComponent(PACT_MODAL, () => WrappedComponent(PactModal))
   Navigation.registerComponent(SYNC_MODE_MODAL, () => WrappedComponent(SyncModeModal))
-  Navigation.registerComponent(TV_HOME_SCREEN, () => WrappedComponent(TVHome))
+  // 顶部导航的六个 tab 共用一个原生 screen（见 TV/Shell.tsx）：
+  // 切 tab 不再 popToRoot + push 重建整页，避免切页卡顿和首帧空底色的「黑一下」
+  Navigation.registerComponent(TV_HOME_SCREEN, () => WrappedComponent(TVShell))
   Navigation.registerComponent(TV_PLAYER_SCREEN, () => WrappedComponent(TVPlayer))
   Navigation.registerComponent(TV_SEARCH_SCREEN, () => WrappedComponent(TVSearch))
   Navigation.registerComponent(TV_QUEUE_SCREEN, () => WrappedComponent(TVQueue))

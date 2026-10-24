@@ -1,7 +1,8 @@
 import { forwardRef, useCallback, useContext, useEffect, useImperativeHandle, useRef, useState, type ComponentRef } from 'react'
 import { Pressable, type NativeSyntheticEvent, type PressableProps, type StyleProp, type TargetedEvent, type ViewStyle } from 'react-native'
 import { tvColors, tvSize, tvTokens } from '@/theme/tv'
-import { notifyTVTargetFocused, registerTVFocusTarget, scheduleTVInitialFocus, subscribeTVTargetFocusState, TVFocusScopeContext, unregisterTVFocusTarget, updateTVFocusTarget } from './tvFocusManager'
+import { notifyTVTargetFocused, registerTVFocusTarget, subscribeTVTargetFocusState, TVFocusScopeContext, unregisterTVFocusTarget, updateTVFocusTarget } from './tvFocusManager'
+import { getTVTabHostActiveId, subscribeTVTabHostActive, TVTabHostContext, TVTabPageIdContext } from './tvTabHost'
 
 export interface FocusableProps extends PressableProps {
   focusStyle?: StyleProp<ViewStyle>
@@ -39,6 +40,8 @@ const Focusable = forwardRef<ComponentRef<typeof Pressable>, FocusableProps>(({
   const nativeRef = useRef<ComponentRef<typeof Pressable> | null>(null)
   const targetIdRef = useRef<number | null>(null)
   const focusScopeId = useContext(TVFocusScopeContext)
+  const inTabHost = useContext(TVTabHostContext)
+  const tabPageId = useContext(TVTabPageIdContext)
   const focusedRef = useRef(false)
   const focusChangeRef = useRef(onTVFocusChange)
   const longPressFiredRef = useRef(false)
@@ -90,26 +93,92 @@ const Focusable = forwardRef<ComponentRef<typeof Pressable>, FocusableProps>(({
   // 外部直接控制视觉焦点状态：不走 useEffect（会被引擎回调覆盖），
   // 直接在样式计算里用 focused || forceFocused，React 渲染 100% 可靠
 
+  // 切页广播可能在任意时刻到达（组件不会因此重渲染），注册时要拿最新的 props，
+  // 所以每次渲染都把要写进焦点注册表的值存到 ref 里。
+  const latestRef = useRef({
+    focusScopeId,
+    hasTVPreferredFocus,
+    nextFocusUp,
+    nextFocusDown,
+    nextFocusLeft,
+    nextFocusRight,
+    onPress,
+    onLongPress,
+    triggerTVPress,
+    handleLongPress,
+  })
+  latestRef.current = {
+    focusScopeId,
+    hasTVPreferredFocus,
+    nextFocusUp,
+    nextFocusDown,
+    nextFocusLeft,
+    nextFocusRight,
+    onPress,
+    onLongPress,
+    triggerTVPress,
+    handleLongPress,
+  }
+
   useEffect(() => {
     const node = nativeRef.current
-    // 注册时即携带 preferred：挂载路径的初始焦点调度由 registerTVFocusTarget 内部触发。
-    // 旧版性在 update effect 里重复调度，导致【任何父组件重渲染】都会把焦点抢回
-    // preferred 项——设置页睡眠定时的每秒重渲染让焦点在音源列表前两项间来回跳
-    // （09-22 老板实测）。初始焦点只该在挂载时发生一次，不随重渲染发生。
-    const id = registerTVFocusTarget(focusScopeId, node, !!hasTVPreferredFocus)
-    targetIdRef.current = id
-    const unsubscribe = subscribeTVTargetFocusState(id, setTVFocused)
+    if (!node) return
+    const isActive = () => !inTabHost || !tabPageId || getTVTabHostActiveId() === tabPageId
+    let id: number | null = null
+    let unsubscribeState: (() => void) | null = null
+
+    const register = () => {
+      if (id != null) return
+      const latest = latestRef.current
+      const nextId = registerTVFocusTarget(latest.focusScopeId, node, !!latest.hasTVPreferredFocus)
+      id = nextId
+      targetIdRef.current = nextId
+      // 注册和写入同一帧完成：否则隐藏页重新激活时只注册了空目标，
+      // nextFocus/onPress 要等父组件碰巧重渲染才会补上。
+      updateTVFocusTarget(nextId, {
+        scopeId: latest.focusScopeId,
+        ref: node,
+        preferred: !!latest.hasTVPreferredFocus,
+        nextFocusUp: latest.nextFocusUp,
+        nextFocusDown: latest.nextFocusDown,
+        nextFocusLeft: latest.nextFocusLeft,
+        nextFocusRight: latest.nextFocusRight,
+        onPress: latest.onPress ? latest.triggerTVPress : undefined,
+        onLongPress: latest.onLongPress ? latest.handleLongPress : undefined,
+      })
+      unsubscribeState = subscribeTVTargetFocusState(nextId, setTVFocused)
+    }
+
+    const unregister = () => {
+      if (id == null) return
+      unsubscribeState?.()
+      unsubscribeState = null
+      unregisterTVFocusTarget(id)
+      id = null
+      targetIdRef.current = null
+      setTVFocused(false)
+    }
+
+    const sync = () => {
+      if (isActive()) register()
+      else unregister()
+    }
+
+    // 隐藏的 tab 页不注册焦点目标：tvFocusManager 每次按键都要把注册表里的目标
+    // 全量 measureInWindow 一遍，六个页面全挂载时会拖到近一秒才落位。
+    // 切页时由宿主广播同步注册/注销，不经过 React 重渲染，页面组件不会重渲染。
+    sync()
+    const unsubscribeActive = inTabHost ? subscribeTVTabHostActive(sync) : null
 
     return () => {
-      unsubscribe()
-      unregisterTVFocusTarget(id)
-      targetIdRef.current = null
+      unsubscribeActive?.()
+      unregister()
     }
-  }, [focusScopeId, setTVFocused])
+  }, [focusScopeId, inTabHost, tabPageId, setTVFocused])
 
   useEffect(() => {
     const id = targetIdRef.current
-    if (!id) return
+    if (id == null) return
     updateTVFocusTarget(id, {
       scopeId: focusScopeId,
       ref: nativeRef.current,
@@ -121,7 +190,7 @@ const Focusable = forwardRef<ComponentRef<typeof Pressable>, FocusableProps>(({
       onPress: onPress ? triggerTVPress : undefined,
       onLongPress: onLongPress ? handleLongPress : undefined,
     })
-  }, [focusScopeId, hasTVPreferredFocus, nextFocusDown, nextFocusLeft, nextFocusRight, nextFocusUp, onPress, triggerTVPress])
+  }, [focusScopeId, hasTVPreferredFocus, nextFocusDown, nextFocusLeft, nextFocusRight, nextFocusUp, onPress, onLongPress, triggerTVPress, handleLongPress])
 
   return (
     <Pressable

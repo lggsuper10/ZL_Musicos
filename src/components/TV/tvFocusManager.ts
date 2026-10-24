@@ -271,7 +271,7 @@ export const scheduleTVInitialFocus = () => {
   }, 260)
 }
 
-export const moveTVFocus = async(direction: Direction) => {
+const moveTVFocusNow = async(direction: Direction) => {
   const measured = await measureTargets()
   const active = getActiveTarget(measured)
   if (!active?.rect) {
@@ -309,14 +309,42 @@ export const moveTVFocus = async(direction: Direction) => {
   return true
 }
 
-/** 按组件 ref 直接聚焦某个目标（测量后 setActiveTarget）。
+/**
+ * 方向键串行化。
+ *
+ * moveTVFocus 要先异步测一遍目标位置再算下一步，两次按键挨得近时（快速连按，
+ * 或长按方向键的 repeat）会并发跑：两次都从「按键前的焦点」出发，最后写回同一个
+ * 目标，表现就是「连按几下只跳一格」。排队后每次按键都基于上一次移动的结果。
+ */
+let moveChain: Promise<boolean> = Promise.resolve()
+
+export const moveTVFocus = async(direction: Direction) => {
+  const next = moveChain.then(
+    async() => moveTVFocusNow(direction),
+    async() => moveTVFocusNow(direction),
+  )
+  moveChain = next.catch(() => false)
+  return next
+}
+
+/** 按组件 ref 直接聚焦某个目标。
  * 供页面里「程序性移动焦点」的场景使用（如详情页从操作按钮下键进列表首行）。
- * 旧做法靠 preferred 翻转+重调度间接实现，初始焦点改为仅挂载时调度后不再可用（09-22）。 */
+ * 旧做法靠 preferred 翻转+重调度间接实现，初始焦点改为仅挂载时调度后不再可用（09-22）。
+ *
+ * 这里按 handle 同步查注册表，不再 measureInWindow 全量测量：切顶栏时六个页面
+ * 全挂载，几十上百个目标挨个走一遍原生测量要一秒多，焦点肉眼可见地「慢半拍」。
+ * 注册表里的目标都是已挂载的 view，requestTVFocus 不依赖测量结果。 */
 export const focusTVTargetByRef = async(ref: FocusTargetRef | null) => {
   if (!ref) return false
-  const measured = await measureTargets()
   const handle = findNodeHandle(ref)
-  const target = measured.find(item => getNativeHandle(item) === handle) ?? null
+  if (handle == null) return false
+  let target: FocusTarget | null = null
+  for (const candidate of targets.values()) {
+    if (getNativeHandle(candidate) === handle) {
+      target = candidate
+      break
+    }
+  }
   if (!target) return false
   setActiveTarget(target)
   return true

@@ -1,8 +1,9 @@
-import { forwardRef, memo, useEffect, useRef, type ComponentProps, type ComponentRef, type MutableRefObject } from 'react'
+import { forwardRef, memo, useCallback, useContext, useEffect, useRef, type ComponentProps, type ComponentRef, type MutableRefObject } from 'react'
 import { View, findNodeHandle, type TextStyle, type ViewStyle } from 'react-native'
 import Focusable from './Focusable'
 import TVText from './TVText'
 import { blurActiveTVTarget, focusTVTargetByRef } from './tvFocusManager'
+import { getTVTabHost, getTVTabHostActiveId, subscribeTVTabHostActive, TVTabHostContext } from './tvTabHost'
 import { tvColors, tvSize, tvTokens } from '@/theme/tv'
 
 export interface TVTabItem {
@@ -69,9 +70,12 @@ interface Props {
 }
 
 const TabButton = forwardRef<any, ComponentProps<typeof Focusable> & { item: TVTabItem, current: boolean }>(({ item, current, ...props }, ref) => {
+  const inHost = useContext(TVTabHostContext)
   const activate = () => {
     if (current || item.noop === true) return
-    blurActiveTVTarget()
+    // 宿主内换页不卸载当前屏：别清焦点，交给新页的 tab 直接接管，
+    // 否则中间会有一小段「无焦点」的按键空窗
+    if (!inHost || !getTVTabHost()) blurActiveTVTarget()
     item.onPress()
   }
   return (
@@ -111,7 +115,11 @@ const TVTopTabs = ({ items, activeId, subtitle, hasTVPreferredFocus, nextFocusDo
   // 顶栏切换进来的页面：把焦点还给当前 tab，方便用户继续左右切下一个。
   // 必须抢在 focusManager 的初始焦点调度（注册 preferred 后 260ms）之前出手——
   // 一旦 tab 成为活动焦点，那次 preferred 调度就会让路，内容区不会先亮一下再跳回来。
+  // 宿主内不需要这条路：页面常驻挂载，切页由下面的宿主广播负责，避免首次挂载时
+  // 两条路径先后抢焦点。
+  const inHost = useContext(TVTabHostContext)
   useEffect(() => {
+    if (inHost) return
     if (!consumeTabFocusArrival(activeId)) return
     let cancelled = false
     let timer: ReturnType<typeof setTimeout> | null = null
@@ -132,7 +140,48 @@ const TVTopTabs = ({ items, activeId, subtitle, hasTVPreferredFocus, nextFocusDo
       cancelled = true
       if (timer) clearTimeout(timer)
     }
+  }, [activeId, inHost])
+
+  // 宿主内换页（同屏切 tab）：本页成为可见页时把焦点交给自己的当前 tab。
+  // 页面常驻挂载，不会再有导航 appear 事件，所以由宿主广播来驱动；
+  // 首次挂载时如果本页正是宿主当前页（比如刚把这一页预挂载出来），也补一次。
+  const focusActiveTab = useCallback(async() => {
+    const node = tabRefs.current[activeId]
+    if (!node) return false
+    return focusTVTargetByRef(node)
   }, [activeId])
+
+  useEffect(() => {
+    if (!inHost) return
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | null = null
+    let retries = 0
+    const focusTab = () => {
+      if (cancelled) return
+      void focusActiveTab().then(ok => {
+        // 目标的注册在广播里同步完成，通常一次就中；页面刚挂载/布局未就绪时再补几次
+        if (cancelled || ok || retries >= 4) return
+        retries++
+        timer = setTimeout(focusTab, 50)
+      })
+    }
+    const scheduleFocus = () => {
+      retries = 0
+      if (timer) clearTimeout(timer)
+      // 广播时同步聚焦：宿主先广播再改 state，本页 tab 的焦点目标此时已注册，
+      // 这里落定后换页那一帧就已经是「高亮 tab + 新页面」，不再先空一帧。
+      focusTab()
+    }
+    const unsubscribe = subscribeTVTabHostActive(id => {
+      if (id === activeId) scheduleFocus()
+    })
+    if (getTVTabHostActiveId() === activeId) scheduleFocus()
+    return () => {
+      cancelled = true
+      unsubscribe()
+      if (timer) clearTimeout(timer)
+    }
+  }, [activeId, focusActiveTab, inHost])
 
   return (
     <View style={styles.root}>

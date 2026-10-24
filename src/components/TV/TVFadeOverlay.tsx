@@ -17,7 +17,9 @@ const TVFadeOverlay = ({ height, peak = 0.4, direction = 'up', style }: Props) =
     source={direction === 'up' ? require('@/resources/images/fade_up.png') : require('@/resources/images/fade_down.png')}
     resizeMode="stretch"
     style={[
-      { position: 'absolute', left: 0, right: 0, height, opacity: peak },
+      // width 必须显式给：渐变 PNG 是 32×512，RN 的 Image 没写 width 时会退回图片
+      // 原始宽度（left/right 拉伸不生效），在电视上就是左边一条 32dp 宽的竖条
+      { position: 'absolute', left: 0, right: 0, width: '100%', height, opacity: peak },
       direction === 'up' ? { bottom: 0 } : { top: 0 },
       style,
     ]}

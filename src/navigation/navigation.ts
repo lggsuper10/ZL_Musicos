@@ -28,6 +28,7 @@ import { windowSizeTools } from '@/utils/windowSizeTools'
 import { type ListInfoItem } from '@/store/songlist/state'
 import type { TVDetailPayload } from '@/screens/TV/types'
 import { requestTabFocusOnArrival } from '@/components/TV/TVTopTabs'
+import { getTVTabHost } from '@/components/TV/tvTabHost'
 
 const TV_BACKGROUND_COLOR = '#060810'
 const TV_PUSH_ANIMATION = {
@@ -64,6 +65,13 @@ const TV_POP_ANIMATION = {
       duration: 160,
     },
   },
+}
+
+// 顶栏切页的兜底 push：只有宿主不在（例如某些入口直接 push 了某个 tab 屏）时才走这里。
+// 关掉进出场动画瞬时完成；不要再加 waitForRender —— 连按左右时旧页会被 popToRoot 销毁，
+// RNN 的 StackAnimator 在 appeared 回调里访问已销毁的 view 会 FATAL 崩进程。
+const TV_TAB_PUSH_ANIMATION = {
+  enabled: false,
 }
 
 export async function pushHomeScreen() {
@@ -648,7 +656,7 @@ const TV_TAB_SCREEN_NAMES: Record<Exclude<TVTabTarget, 'home'>, string> = {
   settings: TV_SETTINGS_SCREEN,
 }
 
-// 顶栏切页的 push：关掉进出场动画，让切换像 tab 一样瞬时完成
+// 顶栏切页的 push：目标页渲染完成后再短暂淡入，避免露底色造成黑屏闪一下
 const pushTVTabScreen = (componentId: string, name: string) => {
   const theme = themeState.theme
   void Navigation.push(componentId, {
@@ -672,7 +680,7 @@ const pushTVTabScreen = (componentId: string, name: string) => {
           componentBackgroundColor: TV_BACKGROUND_COLOR,
         },
         animations: {
-          push: { enabled: false },
+          push: TV_TAB_PUSH_ANIMATION,
           pop: { enabled: false },
         },
       },
@@ -691,14 +699,23 @@ let tvTabSwitchPending: { target: TVTabTarget, at: number } | null = null
 /**
  * 顶部导航「焦点即切换」的页面切换（09-22 老板需求：焦点移到哪个菜单就切到哪个）。
  *
- * 不能直接 push：焦点每扫过一个 tab 就会叠一层页面，返回键要按很多次；也不能
- * setStackRoot 重建整套栈（会把首页卸载重载，丢掉滚动/数据状态）。做法是先 popToRoot
- * 回到首页，再以首页为锚点 push 目标页——栈始终是「首页 + 当前 tab 页」，返回键
- * 一次回到首页；两个命令都关掉动画，观感上就是原地换页。
+ * 正常路径走 TV 宿主（src/screens/TV/Shell.tsx）：六个 tab 页共用一个原生 screen，
+ * 切 tab 只是 React 换可见页，不压栈出栈，所以既没有重建整页的卡顿，也没有
+ * 原生容器首帧空白造成的「黑一下」。
  *
+ * 下面的原生兜底只在宿主不在场时使用（例如某处直接 push 了某个 tab 屏）：
+ * 先 popToRoot 回到首页再 push，栈始终是「首页 + 当前 tab 页」，返回键一次回首页；
  * 连按左右时以最后一次为准：旧命令回到首页后发现自己已过期就不再 push。
  */
 export const switchTVTab = (componentId: string, target: TVTabTarget) => {
+  const host = getTVTabHost()
+  if (host) {
+    // 标记「这次是顶栏切过来的」，目标页里异步加载完成的焦点补偿会让位给顶栏
+    if (target !== 'home') requestTabFocusOnArrival(target)
+    host.show(target)
+    return
+  }
+
   if (tvTabSwitchPending && tvTabSwitchPending.target === target && Date.now() - tvTabSwitchPending.at < 1000) return
   tvTabSwitchPending = { target, at: Date.now() }
   const seq = ++tvTabSwitchSeq
