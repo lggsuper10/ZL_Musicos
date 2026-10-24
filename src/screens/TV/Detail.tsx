@@ -22,6 +22,11 @@ import { handlePlay as handleBoardPlay } from '@/screens/Home/Views/Leaderboard/
 import { handlePlay as handleSonglistPlay } from '@/screens/SonglistDetail/listAction'
 import { getListMusics, setTempList, removeListMusics } from '@/core/list'
 import { playList } from '@/core/player/player'
+import { addDownloadTask } from '@/core/download'
+import { getPlayQuality } from '@/core/music/utils'
+import { toast } from '@/utils/tools'
+import settingState from '@/store/setting/state'
+import TVDownloadPanel from '@/components/TV/TVDownloadPanel'
 import { LIST_IDS } from '@/config/constant'
 import type { TVDetailPayload } from './types'
 import { dot, tvText } from './labels'
@@ -53,6 +58,8 @@ function TVDetail({ componentId, payload }: Props) {
   const rowRefs = useRef<FocusRefMap>({})
   const playAllFocus = useTVFocusRef()
   const backFocus = useTVFocusRef()
+  const downloadAllFocus = useTVFocusRef()
+  const downloadManageFocus = useTVFocusRef()
   const firstRowFocus = useTVFocusRef()
   const retryFocus = useTVFocusRef()
   const loadMoreFocus = useTVFocusRef()
@@ -205,6 +212,27 @@ function TVDetail({ componentId, payload }: Props) {
     pushTVPlayerScreen(componentId)
   }
 
+  // 下载全部：把当前列表所有在线歌加入下载队列（音质取播放音质设置，
+  // 单曲下载在播放页，可自选音质）。本地歌（已下载/本地歌单）跳过。
+  const [showDownloadPanel, setShowDownloadPanel] = useState(false)
+  const handleDownloadAll = () => {
+    // userlist 场景的 list 是本地歌单快照（可能含本地歌），按源过滤；在线列表本就是在线歌
+    const onlineList = list.filter(m => (m as LX.Music.MusicInfo).source != 'local')
+    if (!onlineList.length) {
+      toast(tvText.downloadAddedNone)
+      return
+    }
+    let added = 0
+    for (const musicInfo of onlineList) {
+      const quality = getPlayQuality(settingState.setting['player.playQuality'], musicInfo)
+      if (!musicInfo.meta._qualitys[quality]) continue
+      void addDownloadTask(musicInfo, quality)
+      added++
+    }
+    if (added) toast(tvText.downloadAddedAll.replace('{total}', String(added)))
+    else toast(tvText.downloadAddedNone)
+  }
+
   // 长按删除歌曲（仅自建歌单，老板 09-20 需求）：弹窗确认后从歌单移除。
   // 在线歌单/榜单不支持改远端数据，保持原来的「长按追加到播放列表」。
   const [localDialog, setLocalDialog] = useState<TVDialogRequest | null>(null)
@@ -270,6 +298,32 @@ function TVDetail({ componentId, payload }: Props) {
                 onBlur={handleActionBlur}
                 hasTVPreferredFocus
                 nextFocusUp={getActiveTabHandle() ?? undefined}
+                nextFocusRight={downloadAllFocus.getNodeHandle() ?? undefined}
+                nextFocusDown={firstRowFocus.getNodeHandle() ?? undefined}
+              />
+              <TVButton
+                ref={downloadAllFocus.ref as any}
+                label={tvText.downloadAll}
+                tone="dark"
+                style={styles.actionButton}
+                onPress={handleDownloadAll}
+                onFocus={handleActionFocus}
+                onBlur={handleActionBlur}
+                nextFocusUp={getActiveTabHandle() ?? undefined}
+                nextFocusLeft={playAllFocus.getNodeHandle() ?? undefined}
+                nextFocusRight={downloadManageFocus.getNodeHandle() ?? undefined}
+                nextFocusDown={firstRowFocus.getNodeHandle() ?? undefined}
+              />
+              <TVButton
+                ref={downloadManageFocus.ref as any}
+                label={tvText.downloadManage}
+                tone="dark"
+                style={styles.actionButton}
+                onPress={() => { setShowDownloadPanel(true) }}
+                onFocus={handleActionFocus}
+                onBlur={handleActionBlur}
+                nextFocusUp={getActiveTabHandle() ?? undefined}
+                nextFocusLeft={downloadAllFocus.getNodeHandle() ?? undefined}
                 nextFocusRight={backFocus.getNodeHandle() ?? undefined}
                 nextFocusDown={firstRowFocus.getNodeHandle() ?? undefined}
               />
@@ -282,7 +336,7 @@ function TVDetail({ componentId, payload }: Props) {
                 onFocus={handleActionFocus}
                 onBlur={handleActionBlur}
                 nextFocusUp={getActiveTabHandle() ?? undefined}
-                nextFocusLeft={playAllFocus.getNodeHandle() ?? undefined}
+                nextFocusLeft={downloadManageFocus.getNodeHandle() ?? undefined}
                 nextFocusRight={firstRowFocus.getNodeHandle() ?? undefined}
                 nextFocusDown={firstRowFocus.getNodeHandle() ?? undefined}
               />
@@ -378,6 +432,7 @@ function TVDetail({ componentId, payload }: Props) {
         })) ?? []}
         onDismiss={() => { setLocalDialog(null) }}
       />
+      <TVDownloadPanel visible={showDownloadPanel} onClose={() => { setShowDownloadPanel(false) }} />
     </TVAppleScaffold>
   )
 }

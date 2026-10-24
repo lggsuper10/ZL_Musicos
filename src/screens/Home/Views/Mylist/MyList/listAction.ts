@@ -1,10 +1,11 @@
-import { addListMusics, getListMusics, removeListMusics, removeUserList, setFetchingListStatus, updateListMusics } from '@/core/list'
+import { addListMusics, createUserList, getListMusics, getUserLists, removeListMusics, removeUserList, setFetchingListStatus, updateListMusics } from '@/core/list'
 import { confirmDialog, handleReadFile, handleSaveFile, showImportTip, toast } from '@/utils/tools'
 import syncSourceList from '@/core/syncSourceList'
 import { log } from '@/utils/log'
 import { filterFileName, filterMusicList, formatPlayTime2, toNewMusicInfo } from '@/utils'
 import { handleImportListPart } from '@/screens/Home/Views/Setting/settings/Backup/actions'
 import { readMetadata, scanAudioFiles, type MusicMetadataFull } from '@/utils/localMediaMetadata'
+import { DOWNLOAD_LIST_ID } from '@/config/constant'
 import settingState from '@/store/setting/state'
 import BackgroundTimer from 'react-native-background-timer'
 import { type FileType } from '@/utils/fs'
@@ -203,4 +204,52 @@ export const handleImportMediaFile = async(listInfo: LX.List.MyListInfo, path: s
     await handleUpdateMusics(files.map(f => f.path), throttleUpdateMusics)
   } else toast(global.i18n.t('list_select_local_file_empty_tip'), 'long')
   setFetchingListStatus(listInfo.id, false)
+}
+
+/**
+ * 添加用户手动选择的单个/少量音频文件到列表（区别于扫描整个文件夹）
+ */
+export const handleImportMediaFiles = async(listInfo: LX.List.MyListInfo, filePaths: string[]) => {
+  if (!filePaths.length) return
+  setFetchingListStatus(listInfo.id, true)
+  const errorPath: string[] = []
+  const musicInfos = await createLocalMusicInfos(filePaths, errorPath)
+  if (musicInfos.length) {
+    await addListMusics(listInfo.id, musicInfos, settingState.setting['list.addMusicLocationType'])
+  }
+  if (errorPath.length) {
+    log.warn('Parse metadata failed:\n' + errorPath.map(p => p.split('/').at(-1)).join('\n'))
+    toast(global.i18n.t('list_select_local_file_result_failed_tip', { total: filePaths.length, success: musicInfos.length, failed: errorPath.length }), 'long')
+  } else {
+    toast(global.i18n.t('list_select_local_file_result_tip', { total: filePaths.length }), 'long')
+  }
+  setFetchingListStatus(listInfo.id, false)
+}
+
+/**
+ * TV 端「从硬盘添加本地歌」入口：扫描指定文件夹里的音频文件，
+ * 加入固定 id 的「本地歌曲」歌单（与下载完成自动归类的歌单是同一个）。
+ * 复用本文件的扫描/解析/补齐元数据逻辑，仅目标歌单固定为 DOWNLOAD_LIST_ID。
+ */
+const ensureLocalListExists = async() => {
+  const lists = await getUserLists()
+  if (lists.some((l: any) => l.id === DOWNLOAD_LIST_ID)) return
+  await createUserList(-1, [{ id: DOWNLOAD_LIST_ID, name: global.i18n.t('download_local_list_name'), locationUpdateTime: null }])
+}
+
+export const importLocalFolderToLocalSongs = async(path: string) => {
+  await ensureLocalListExists()
+  const files = await scanAudioFiles(path)
+  if (!files.length) {
+    toast(global.i18n.t('list_select_local_file_empty_tip'), 'long')
+    return
+  }
+  const throttleUpdateMusics = createThrottleAddMusics(async(listId, musicInfos) => {
+    return updateListMusics(musicInfos.map(info => ({ id: listId, musicInfo: info })))
+  }, async(listId, errorPath) => {
+    return removeListMusics(listId, errorPath)
+  }, DOWNLOAD_LIST_ID)
+  await addListMusics(DOWNLOAD_LIST_ID, files.map(buildLocalMusicInfoByFilePath), settingState.setting['list.addMusicLocationType'])
+  toast(global.i18n.t('list_select_local_file_temp_add_tip', { total: files.length }), 'long')
+  await handleUpdateMusics(files.map(f => f.path), throttleUpdateMusics)
 }

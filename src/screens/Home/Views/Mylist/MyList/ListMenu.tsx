@@ -27,6 +27,7 @@ export interface ListMenuProps {
   onExport: (listInfo: LX.List.MyListInfo, index: number) => void
   onSync: (listInfo: LX.List.UserListInfo) => void
   onSelectLocalFile: (listInfo: LX.List.MyListInfo, index: number) => void
+  onSelectLocalFiles: (listInfo: LX.List.MyListInfo, index: number) => void
   onRemove: (listInfo: LX.List.UserListInfo) => void
 }
 export interface ListMenuType {
@@ -46,6 +47,7 @@ export default forwardRef<ListMenuType, ListMenuProps>(({
   onExport,
   onSync,
   onSelectLocalFile,
+  onSelectLocalFiles,
   onRemove,
 }, ref) => {
   const t = useI18n()
@@ -92,6 +94,7 @@ export default forwardRef<ListMenuType, ListMenuProps>(({
       { action: 'sort', label: t('list_sort') },
       { action: 'duplicateMusic', label: t('lists__duplicate') },
       { action: 'local_file', disabled: !local_file, label: t('list_select_local_file') },
+      { action: 'local_files', disabled: !local_file, label: t('list_select_audio_file') },
       { action: 'sync', disabled: !sync || !local_file, label: t('list_sync') },
       { action: 'import', label: t('list_import') },
       { action: 'export', label: t('list_export') },
@@ -129,6 +132,9 @@ export default forwardRef<ListMenuType, ListMenuProps>(({
         //   break
       case 'local_file':
         onSelectLocalFile(selectInfo.listInfo, selectInfo.index)
+        break
+      case 'local_files':
+        onSelectLocalFiles(selectInfo.listInfo, selectInfo.index)
         break
       case 'remove':
         onRemove(selectInfo.listInfo as LX.List.UserListInfo)

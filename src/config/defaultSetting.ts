@@ -71,6 +71,9 @@ const defaultSetting: LX.AppSetting = {
   'list.addMusicLocationType': 'top',
 
   'download.fileName': '歌名 - 歌手',
+  // 下载保存位置：用户通过「设置-下载保存位置」用 SAF 选择的本地目录 URI（content://...），
+  // 为空则回退默认 externalStorageDirectoryPath/Music/洛雪音乐
+  'download.savePath': '',
 
   'sync.enable': false,
 

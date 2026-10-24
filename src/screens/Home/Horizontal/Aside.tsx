@@ -61,6 +61,15 @@ const styles = createStyle({
     paddingLeft: 15,
     // fontWeight: '500',
   },
+  // 选中态：左侧主题色指示条（背景色内联，需读主题）
+  activeIndicator: {
+    position: 'absolute',
+    left: 0,
+    top: 10,
+    bottom: 10,
+    width: 4,
+    borderRadius: 2,
+  },
 })
 
 const Header = () => {
@@ -88,7 +97,8 @@ const MenuItem = ({ id, icon, onPress }: {
   const theme = useTheme()
 
   return activeId == id
-    ? <View style={styles.menuItem}>
+    ? <View style={[styles.menuItem, { backgroundColor: theme['c-primary-background'] }]}>
+        <View style={[styles.activeIndicator, { backgroundColor: theme['c-primary'] }]} />
         <View style={styles.iconContent}>
           <Icon name={icon} size={20} color={theme['c-primary-font-active']} />
         </View>
@@ -124,8 +134,9 @@ export default memo(() => {
         return
     }
 
-    global.app_event.changeMenuVisible(false)
+    // 先切页再关抽屉，与竖屏抽屉菜单一致
     setNavActiveId(id)
+    global.app_event.changeMenuVisible(false)
   }
 
   return (

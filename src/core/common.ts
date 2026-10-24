@@ -66,6 +66,9 @@ export const exitApp = (reason: string) => {
 
 export const setFontSize = (size: number) => {
   commonActions.setFontSize(size)
+  // 同步 global.lx.fontSize：setSpText 读的是这个全局值，
+  // 只更新 store 的话设置页之外的界面不会变，要重启 app 才生效
+  global.lx.fontSize = size
   void saveFontSize(size)
 }
 

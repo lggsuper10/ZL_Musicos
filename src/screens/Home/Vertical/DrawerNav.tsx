@@ -55,6 +55,15 @@ const styles = createStyle({
     paddingLeft: 20,
     // fontWeight: '500',
   },
+  // 选中态：左侧主题色指示条（背景色内联，需读主题）
+  activeIndicator: {
+    position: 'absolute',
+    left: 0,
+    top: 8,
+    bottom: 8,
+    width: 4,
+    borderRadius: 2,
+  },
 })
 
 const Header = () => {
@@ -82,7 +91,8 @@ const MenuItem = ({ id, icon, onPress }: {
   const theme = useTheme()
 
   return activeId == id
-    ? <View style={styles.menuItem}>
+    ? <View style={[styles.menuItem, { backgroundColor: theme['c-primary-background'] }]}>
+        <View style={[styles.activeIndicator, { backgroundColor: theme['c-primary'] }]} />
         <View style={styles.iconContent}>
           <Icon name={icon} size={20} color={theme['c-primary-font-active']} />
         </View>
@@ -118,8 +128,10 @@ export default memo(() => {
         return
     }
 
-    global.app_event.changeMenuVisible(false)
+    // 先切页（PagerView 同步生效），再关抽屉：
+    // 页面切换不再等待抽屉关闭动画，切菜单感知更快
     setNavActiveId(id)
+    global.app_event.changeMenuVisible(false)
   }
 
 

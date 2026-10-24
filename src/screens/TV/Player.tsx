@@ -10,14 +10,16 @@ import TVFadeOverlay from '@/components/TV/TVFadeOverlay'
 import { getTVLayoutMetrics, tvColors, tvSize } from '@/theme/tv'
 import { useIsPlay, usePlayerMusicInfo, useProgress } from '@/store/player/hook'
 import { playNext, playPrev, togglePlay } from '@/core/player/player'
+import { addDownloadTask } from '@/core/download'
+import { showTVDialog } from '@/components/TV/TVDialog'
+import { toast } from '@/utils/tools'
 import { useSettingValue } from '@/store/setting/hook'
 import { updateSetting } from '@/core/common'
 import { useTVFocusRef } from '@/components/TV/useTVFocusRef'
 import { focusTVTargetByRef } from '@/components/TV/tvFocusManager'
 import { useTVNavigationBack } from '@/utils/hooks/useTVNavigationBack'
-import { getDominantColor } from '@/utils/nativeModules/utils'
+import { getDominantColor, onTVRemoteEvent } from '@/utils/nativeModules/utils'
 import { useTVRemoteActions } from '@/utils/hooks/useTVRemoteActions'
-import { onTVRemoteEvent } from '@/utils/nativeModules/utils'
 import { useLrcPlay, useLrcSet } from '@/plugins/lyric'
 import { MUSIC_TOGGLE_MODE, MUSIC_TOGGLE_MODE_LIST } from '@/config/constant'
 import { tvText } from './labels'
@@ -77,6 +79,59 @@ function TVPlayer({ componentId }: { componentId: string }) {
   const nextFocus = useTVFocusRef()
   const modeFocus = useTVFocusRef()
   const lyricFocus = useTVFocusRef()
+  const downloadFocus = useTVFocusRef()
+  const pinFocus = useTVFocusRef()
+  const [controlsPinned, setControlsPinned] = useState(false)
+  const controlsPinnedRef = useRef(false)
+  useEffect(() => { controlsPinnedRef.current = controlsPinned }, [controlsPinned])
+
+  // 下载当前歌曲（TV 端单曲下载入口）：弹音质选择后入队。
+  // 本地歌/无音质信息时直接提示，不弹空菜单。
+  const handleDownload = () => {
+    // playMusicInfo.musicInfo 可能是下载任务（'progress' in），取原始在线歌曲
+    const raw = (musicInfo && 'progress' in musicInfo ? (musicInfo as unknown as LX.Download.ListItem).metadata.musicInfo : musicInfo) as LX.Music.MusicInfo | undefined
+    if (!raw?.id) {
+      toast(tvText.chooseSongFirst)
+      return
+    }
+    if (raw.source == 'local') {
+      toast(tvText.downloadLocalSkip)
+      return
+    }
+    const onlineMusicInfo = raw
+    const qualitys = onlineMusicInfo.meta?._qualitys
+    const options: LX.Quality[] = []
+    if (qualitys?.flac24bit) options.push('flac24bit')
+    if (qualitys?.flac ?? qualitys?.ape) options.push('flac')
+    if (qualitys?.['320k']) options.push('320k')
+    if (qualitys?.['128k']) options.push('128k')
+    if (!options.length) {
+      toast(tvText.downloadQualityNone)
+      return
+    }
+    const qualityLabels: Partial<Record<LX.Quality, string>> = {
+      flac24bit: tvText.downloadQuality24bit,
+      flac: tvText.downloadQualityFlac,
+      '320k': tvText.downloadQuality320k,
+      '128k': tvText.downloadQuality128k,
+    }
+    if (options.length == 1) {
+      void addDownloadTask(onlineMusicInfo, options[0])
+      return
+    }
+    showTVDialog({
+      title: tvText.selectDownloadQuality,
+      message: onlineMusicInfo.name,
+      buttons: [
+        ...options.map(q => ({
+          label: qualityLabels[q] ?? q,
+          tone: 'dark' as const,
+          onPress: () => { void addDownloadTask(onlineMusicInfo, q) },
+        })),
+        { label: tvText.cancelAction, tone: 'dark' as const },
+      ],
+    })
+  }
   const progressPercent = Math.max(0, Math.min(progress.progress * 100, 100))
   // 专辑主色动态背景（借鉴 zl-music-tv）：换歌时从封面取主色，动画过渡浸染背景
   const [dominant, setDominant] = useState<string | null>(null)
@@ -104,7 +159,7 @@ function TVPlayer({ componentId }: { componentId: string }) {
     const n = parseInt(hex.slice(1), 16)
     return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`
   }
-  const washFallback = 'rgba(3,4,8,0.34)'   // 原版 deepWash 基色
+  const washFallback = 'rgba(3,4,8,0.34)' // 原版 deepWash 基色
   const washTo = dominant ? hexToRgba(dominant, 0.55) : washFallback
   // 歌词区方向键路由：
   // 控制栏隐藏（听歌模式）——四向自指，引擎让路：左右=直控切歌、上下/菜单=呼出栏+聚焦播放键；
@@ -141,7 +196,7 @@ function TVPlayer({ componentId }: { componentId: string }) {
       pendingPlayRef.current = false
       setPendingPlay(false)
     }, 8000)
-    return () => clearTimeout(timer)
+    return () => { clearTimeout(timer) }
   }, [musicInfo.id])
   const showAsPlaying = isPlay || pendingPlay
   useEffect(() => {
@@ -258,7 +313,7 @@ function TVPlayer({ componentId }: { componentId: string }) {
   useTVNavigationBack(componentId)
 
   const scheduleHideControls = useCallback(() => {
-    hideDeadlineRef.current = Date.now() + 3000
+    hideDeadlineRef.current = Date.now() + 5000
   }, [])
 
   const revealControls = useCallback(() => {
@@ -277,6 +332,15 @@ function TVPlayer({ componentId }: { componentId: string }) {
     revealControls()
   }, [revealControls])
 
+  // 状态栏常驻开关：开启时控制栏一直显示，关闭时回到 5 秒后自动隐藏。
+  const toggleControlsPin = useCallback(() => {
+    setControlsPinned(prev => {
+      const next = !prev
+      if (!next) scheduleHideControls()
+      return next
+    })
+  }, [scheduleHideControls])
+
   useEffect(() => {
     if (!showControls) setHideKey(k => k + 1)
   }, [showControls])
@@ -285,6 +349,7 @@ function TVPlayer({ componentId }: { componentId: string }) {
     revealControls()
     const interval = setInterval(() => {
       if (controlFocusCountRef.current > 0) return
+      if (controlsPinnedRef.current) return // 状态栏锁定常驻：不自动隐藏
       if (Date.now() >= hideDeadlineRef.current) setShowControls(false)
     }, 500)
     return () => { clearInterval(interval) }
@@ -342,7 +407,12 @@ function TVPlayer({ componentId }: { componentId: string }) {
       // eventKeyAction 即原生 KeyEvent.getAction()：0=DOWN, 1=UP。
       // 长按 repeat 事件 action 仍是 0、靠 repeatCount>0 识别（ACTION_MULTIPLE 不出现在方向键上）
       if (isSelectKey) {
-        if (eventKeyAction === 1) togglePlay()
+        if (eventKeyAction === 1) {
+          // 控制栏隐藏时（焦点落在歌词区）OK 先召出控制栏，避免「想点下载按钮却盲触发播放/暂停」；
+          // 控制栏显示时焦点已在按钮上（上方 controlFocusCountRef>0 已 return），这里只处理隐藏态。
+          if (showControls) togglePlay()
+          else revealControls()
+        }
         return
       }
       const dir = eventType === 'left' ? 'left' : 'right'
@@ -516,7 +586,9 @@ function TVPlayer({ componentId }: { componentId: string }) {
               <TVRoundControl ref={modeFocus.ref as any} label={getPlayModeName(playMode)} iconName={getPlayModeIconName(playMode)} size={appleLayout.controlSmall} onPress={togglePlayMode} onFocus={handleControlFocus} onBlur={handleControlBlur} accessibilityLabel={getPlayModeName(playMode)} nextFocusRight={prevFocus.getNodeHandle() ?? undefined} />
               <TVRoundControl ref={prevFocus.ref as any} label={tvText.controlPrev} iconName="prevMusic" size={appleLayout.controlSmall} onPress={() => { revealControls(); void playPrev() }} onFocus={handleControlFocus} onBlur={handleControlBlur} accessibilityLabel={tvText.controlPrev} nextFocusLeft={modeFocus.getNodeHandle() ?? undefined} nextFocusRight={playFocus.getNodeHandle() ?? undefined} />
               <TVRoundControl ref={playFocus.ref as any} label={showAsPlaying ? tvText.pause : tvText.playNow} iconName={showAsPlaying ? 'pause' : 'play'} primary size={appleLayout.controlPrimary} onPress={handleTogglePlay} onFocus={handleControlFocus} onBlur={handleControlBlur} hasTVPreferredFocus nextFocusLeft={prevFocus.getNodeHandle() ?? undefined} nextFocusRight={nextFocus.getNodeHandle() ?? undefined} />
-              <TVRoundControl ref={nextFocus.ref as any} label={tvText.controlNext} iconName="nextMusic" size={appleLayout.controlSmall} onPress={() => { revealControls(); void playNext() }} onFocus={handleControlFocus} onBlur={handleControlBlur} accessibilityLabel={tvText.controlNext} nextFocusLeft={playFocus.getNodeHandle() ?? undefined} />
+              <TVRoundControl ref={nextFocus.ref as any} label={tvText.controlNext} iconName="nextMusic" size={appleLayout.controlSmall} onPress={() => { revealControls(); void playNext() }} onFocus={handleControlFocus} onBlur={handleControlBlur} accessibilityLabel={tvText.controlNext} nextFocusLeft={playFocus.getNodeHandle() ?? undefined} nextFocusRight={downloadFocus.getNodeHandle() ?? undefined} />
+              <TVRoundControl ref={downloadFocus.ref as any} label={tvText.download} iconName="download-2" size={appleLayout.controlSmall} onPress={() => { revealControls(); handleDownload() }} onFocus={handleControlFocus} onBlur={handleControlBlur} accessibilityLabel={tvText.download} nextFocusLeft={nextFocus.getNodeHandle() ?? undefined} nextFocusRight={pinFocus.getNodeHandle() ?? undefined} />
+              <TVRoundControl ref={pinFocus.ref as any} label={tvText.controlPin} iconName={undefined} primary={controlsPinned} size={appleLayout.controlSmall} onPress={toggleControlsPin} onFocus={handleControlFocus} onBlur={handleControlBlur} accessibilityLabel={tvText.controlPin} nextFocusLeft={downloadFocus.getNodeHandle() ?? undefined} />
             </View>
             </TVNowPlayingDock>
           </View>

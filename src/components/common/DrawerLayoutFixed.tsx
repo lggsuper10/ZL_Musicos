@@ -23,7 +23,10 @@ const DrawerLayoutFixed = forwardRef<DrawerLayoutFixedType, Props>(({ visibleNav
   const changedRef = useRef({ width: 0, changed: false })
 
   const fixDrawerWidth = useCallback(() => {
-    if (!changedRef.current.width) return
+    // 同一时刻只允许一个修复周期：changed 为 true 表示已设置 width-1、
+    // 正在等待布局回调恢复，此时重复触发只会白白多出两次整树重排
+    // （歌单/排行榜/我的列表三个页面都会在切菜单时调用，需合流为一次）
+    if (!changedRef.current.width || changedRef.current.changed) return
     changedRef.current.changed = true
     // console.log('usePageVisible', visible, changedRef.current.width)
     setW(changedRef.current.width - 1)

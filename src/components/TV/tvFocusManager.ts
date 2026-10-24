@@ -105,14 +105,6 @@ const measureTargets = async() => {
   return measured.filter(Boolean) as FocusTarget[]
 }
 
-const getActiveTarget = (measured: FocusTarget[]) => {
-  if (activeTargetId) {
-    const active = measured.find(target => target.id === activeTargetId)
-    if (active) return active
-  }
-  return measured.find(target => target.preferred) ?? measured[0] ?? null
-}
-
 const getNativeHandle = (target: FocusTarget) => target.ref ? findNodeHandle(target.ref) : null
 
 const getExplicitNextFocusHandle = (target: FocusTarget, direction: Direction) => {
@@ -124,10 +116,18 @@ const getExplicitNextFocusHandle = (target: FocusTarget, direction: Direction) =
   }
 }
 
-const getExplicitNextTarget = (target: FocusTarget, measured: FocusTarget[], direction: Direction) => {
-  const nextHandle = getExplicitNextFocusHandle(target, direction)
-  if (!nextHandle) return null
-  return measured.find(item => getNativeHandle(item) === nextHandle) ?? null
+/**
+ * 按原生 handle 在注册表里直接定位目标（限定 scope），跳过 measureInWindow。
+ * 首页/详情页的卡片都设了显式 nextFocus，走这条链时每次方向键零测量，焦点跟手
+ * （原实现会先无条件全量 measure 一遍再取显式目标，几十个节点时每次按键都慢半拍）。
+ */
+const findScopedTargetByHandle = (handle: number | null, scopeId: string | null): FocusTarget | null => {
+  if (handle == null) return null
+  for (const target of targets.values()) {
+    if (scopeId != null && target.scopeId !== scopeId) continue
+    if (getNativeHandle(target) === handle) return target
+  }
+  return null
 }
 
 const getCandidateScore = (from: FocusRect, to: FocusRect, direction: Direction) => {
@@ -272,32 +272,48 @@ export const scheduleTVInitialFocus = () => {
 }
 
 const moveTVFocusNow = async(direction: Direction) => {
-  const measured = await measureTargets()
-  const active = getActiveTarget(measured)
-  if (!active?.rect) {
+  const active = activeTargetId != null ? targets.get(activeTargetId) : null
+
+  // 无活跃焦点（切页/挂载空窗）：回退到全量测量 + preferred 兜底，低频场景
+  if (!active) {
+    const measured = await measureTargets()
     const preferred = measured.find(target => target.preferred) ?? measured[0]
     if (!preferred) return false
     setActiveTarget(preferred)
     return true
   }
 
-  const explicitTarget = getExplicitNextTarget(active, measured, direction)
+  // 显式链优先：直接查注册表，零 measureInWindow。命中即用，焦点瞬间落位。
+  // 首页/详情页/播放页控制栏的卡片都设了 nextFocus，这一步把「每次方向键全量测一遍」
+  // 降为「零测量」，根除焦点慢半拍（注释见 Focusable.tsx / Home.tsx 的 nextFocus 设置）。
+  const explicitHandle = getExplicitNextFocusHandle(active, direction)
+  const explicitTarget = explicitHandle != null ? findScopedTargetByHandle(explicitHandle, active.scopeId) : null
   if (explicitTarget) {
     setActiveTarget(explicitTarget)
+    return true
+  }
+
+  // 无显式链：才走几何候选，需要实时坐标，全量 measure 一次（原逻辑）
+  const measured = await measureTargets()
+  const activeMeasured = measured.find(target => target.id === active.id) ?? active
+  if (!activeMeasured?.rect) {
+    const preferred = measured.find(target => target.preferred) ?? measured[0]
+    if (!preferred) return false
+    setActiveTarget(preferred)
     return true
   }
 
   const candidates: Array<{ target: FocusTarget, score: number }> = []
   for (const target of measured) {
     if (target.id === active.id || !target.rect) continue
-    const score = getCandidateScore(active.rect, target.rect, direction)
+    const score = getCandidateScore(activeMeasured.rect, target.rect, direction)
     if (score == null) continue
     candidates.push({ target, score })
   }
   if (!candidates.length) return false
 
   // 同排（左右移动）/ 同列（上下移动）优先，避免顶部导航条抢走同一排的卡片，详见 getSameBandCandidates
-  const pool = getSameBandCandidates(active.rect, candidates, direction)
+  const pool = getSameBandCandidates(activeMeasured.rect, candidates, direction)
 
   let best: { target: FocusTarget, score: number } | null = null
   for (const candidate of pool) {
@@ -316,7 +332,7 @@ const moveTVFocusNow = async(direction: Direction) => {
  * 或长按方向键的 repeat）会并发跑：两次都从「按键前的焦点」出发，最后写回同一个
  * 目标，表现就是「连按几下只跳一格」。排队后每次按键都基于上一次移动的结果。
  */
-let moveChain: Promise<boolean> = Promise.resolve()
+let moveChain: Promise<boolean> = Promise.resolve(true)
 
 export const moveTVFocus = async(direction: Direction) => {
   const next = moveChain.then(

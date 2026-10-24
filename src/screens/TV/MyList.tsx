@@ -1,11 +1,12 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from 'react'
-import { ScrollView, View, findNodeHandle, type TextStyle, type ViewStyle } from 'react-native'
+import { ScrollView, View, useWindowDimensions, findNodeHandle, type TextStyle, type ViewStyle } from 'react-native'
 import TVAppleScaffold from '@/components/TV/TVAppleScaffold'
 import TVTopTabs from '@/components/TV/TVTopTabs'
 import TVText from '@/components/TV/TVText'
 import TVPosterCard from '@/components/TV/TVPosterCard'
 import Focusable from '@/components/TV/Focusable'
 import TVDialog, { type TVDialogRequest } from '@/components/TV/TVDialog'
+import TVChoosePath from '@/components/TV/TVChoosePath'
 import { tvColors, tvFont, tvSize, tvTokens } from '@/theme/tv'
 import { useMyList } from '@/store/list/hook'
 import { removeUserList, getListMusics } from '@/core/list'
@@ -34,6 +35,8 @@ const IMPORT_CARD_KEY = '__mylist_import__'
 
 function TVMyList({ componentId }: { componentId: string }) {
   const musicInfo = usePlayerMusicInfo()
+  const [localDiskFocused, setLocalDiskFocused] = useState(false)
+  const [chooseLocalVisible, setChooseLocalVisible] = useState(false)
   const allLists = useMyList()
   // 「我的歌单」只展示用户自己建的（含手机导入的）列表，试听列表/我的收藏不在这里重复出现
   const userSonglists = useMemo(
@@ -85,11 +88,10 @@ function TVMyList({ componentId }: { componentId: string }) {
 
   // 与推荐页（Home）同一套等比缩放：按实测视口高度把标题、卡片、间距整体缩进一屏。
   // 只认第一次有效测量——顶栏 tab 获得/失去焦点时高度会变，跟着重算会让整页字号跳一下。
-  const [contentHeight, setContentHeight] = useState(0)
-  const contentScale = useMemo(() => {
-    if (!contentHeight) return 1
-    return Math.max(0.5, Math.min(1, contentHeight / tvSize(680)))
-  }, [contentHeight])
+  // 用 useWindowDimensions 同步拿到屏高，首帧即给出正确缩放系数，无需 onLayout+opacity 首帧隐藏
+  // （那套方案在部分 TV 设备上 onLayout 未触发会导致整页永久 opacity:0 白屏）。缩放行为不变：高屏不缩、矮屏等比缩进一屏。
+  const { height: windowHeight } = useWindowDimensions()
+  const contentScale = useMemo(() => Math.max(0.5, Math.min(1, windowHeight / tvSize(680))), [windowHeight])
   const z = useCallback((value: number) => Math.max(1, Math.round(value * contentScale)), [contentScale])
 
   // ── 「聚焦即滚动」 ──────────────────────────────────────────────
@@ -226,12 +228,7 @@ function TVMyList({ componentId }: { componentId: string }) {
         contentContainerStyle={[styles.content, { paddingBottom: z(tvSize(36)) }]}
         scrollEventThrottle={16}
         onScroll={(e) => { scrollYRef.current = e.nativeEvent.contentOffset.y }}
-        onLayout={(e) => {
-          const height = e.nativeEvent.layout.height
-          viewportHRef.current = height
-          if (height < 120) return
-          setContentHeight(prev => prev || Math.round(height))
-        }}
+        onLayout={(e) => { viewportHRef.current = e.nativeEvent.layout.height }}
       >
         {/* 版式与排行榜 / 播放列表页一致：无外框、大标题 + 一行说明，内容直接铺在背景上 */}
         <View style={[styles.header, { marginBottom: z(tvSize(18)) }]}>
@@ -263,6 +260,25 @@ function TVMyList({ componentId }: { componentId: string }) {
             </View>
             <TVText variant="cardTitle" numberOfLines={1} style={[styles.importTitle, { marginTop: z(tvSize(14)), fontSize: z(tvFont(21)) }]}>{tvText.importSonglist}</TVText>
             <TVText variant="caption" color={tvColors.dimText} numberOfLines={1} style={[styles.importHint, { marginTop: z(tvSize(5)), fontSize: z(tvTokens.caption) }]}>手机扫码 / 粘贴链接</TVText>
+          </Focusable>
+          {/* 「从硬盘添加本地歌」常驻卡：TV 端此前完全没有本地文件导入入口，
+              手机端只能在「我的歌单」菜单里选文件夹、遥控器用不了。这里提供一个 TV 入口，
+              打开 TVChoosePath 目录浏览器选文件夹，把里面的音频扫进「本地歌曲」歌单。 */}
+          <Focusable
+            ref={getCardRefCallback('mylist_local_disk') as any}
+            style={[styles.importCard, { width: z(tvSize(210)), padding: z(tvSize(8)) }]}
+            focusStyle={styles.importCardFocus}
+            onPress={() => { setChooseLocalVisible(true) }}
+            onTVFocusChange={setLocalDiskFocused}
+            onFocus={() => { revealCardRow('mylist_local_disk') }}
+            onLayout={(e) => { recordCardBox('mylist_local_disk', e.nativeEvent.layout.y, e.nativeEvent.layout.height) }}
+            nextFocusUp={getActiveTabHandle() ?? undefined}
+          >
+            <View style={[styles.importArt, { width: z(tvSize(210)), height: z(tvSize(210)), borderRadius: z(tvTokens.radiusLg) }, localDiskFocused ? styles.importArtFocus : null]}>
+              <TVText style={[styles.importPlus, { fontSize: z(tvFont(56)) }]}>💿</TVText>
+            </View>
+            <TVText variant="cardTitle" numberOfLines={1} style={[styles.importTitle, { marginTop: z(tvSize(14)), fontSize: z(tvFont(21)) }]}>{tvText.addLocalSongDisk}</TVText>
+            <TVText variant="caption" color={tvColors.dimText} numberOfLines={1} style={[styles.importHint, { marginTop: z(tvSize(5)), fontSize: z(tvTokens.caption) }]}>选择文件夹</TVText>
           </Focusable>
           {/* 「我的收藏」常驻卡：上游一直存在这个列表，但 TV 端此前无任何入口（09-20 需求）；
               红色调与自建歌单区分，封面取收藏里第一首歌的专辑图 */}
@@ -324,6 +340,7 @@ function TVMyList({ componentId }: { componentId: string }) {
           setLocalDialog(null)
         }}
       />
+      <TVChoosePath visible={chooseLocalVisible} onClose={() => setChooseLocalVisible(false)} />
     </TVAppleScaffold>
   )
 }

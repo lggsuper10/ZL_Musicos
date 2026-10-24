@@ -5,6 +5,7 @@ import SongList from '../Views/SongList'
 import Mylist from '../Views/Mylist'
 import Leaderboard from '../Views/Leaderboard'
 import Setting from '../Views/Setting'
+import Download from '../Views/Download'
 import commonState, { type InitState as CommonState } from '@/store/common/state'
 import { createStyle } from '@/utils/tools'
 import PagerView, { type PageScrollStateChangedNativeEvent, type PagerViewOnPageSelectedEvent } from 'react-native-pager-view'
@@ -25,9 +26,7 @@ const SearchPage = () => {
     const handleNavIdUpdate = (id: CommonState['navActiveId']) => {
       currentId = id
       if (id == 'nav_search') {
-        requestAnimationFrame(() => {
-          setVisible(true)
-        })
+        setVisible(true)
       }
     }
     const handleHide = () => {
@@ -60,9 +59,7 @@ const SongListPage = () => {
     const handleNavIdUpdate = (id: CommonState['navActiveId']) => {
       currentId = id
       if (id == 'nav_songlist') {
-        requestAnimationFrame(() => {
-          setVisible(true)
-        })
+        setVisible(true)
       }
     }
     const handleHide = () => {
@@ -81,7 +78,7 @@ const SongListPage = () => {
       global.state_event.off('navActiveIdUpdated', handleNavIdUpdate)
       global.state_event.off('themeUpdated', handleHide)
       global.state_event.off('languageChanged', handleHide)
-      global.state_event.on('configUpdated', handleConfigUpdated)
+      global.state_event.off('configUpdated', handleConfigUpdated)
     }
   }, [])
 
@@ -96,9 +93,7 @@ const LeaderboardPage = () => {
     const handleNavIdUpdate = (id: CommonState['navActiveId']) => {
       currentId = id
       if (id == 'nav_top') {
-        requestAnimationFrame(() => {
-          setVisible(true)
-        })
+        setVisible(true)
       }
     }
     const handleHide = () => {
@@ -117,7 +112,7 @@ const LeaderboardPage = () => {
       global.state_event.off('navActiveIdUpdated', handleNavIdUpdate)
       global.state_event.off('themeUpdated', handleHide)
       global.state_event.off('languageChanged', handleHide)
-      global.state_event.on('configUpdated', handleConfigUpdated)
+      global.state_event.off('configUpdated', handleConfigUpdated)
     }
   }, [])
 
@@ -131,9 +126,7 @@ const MylistPage = () => {
     const handleNavIdUpdate = (id: CommonState['navActiveId']) => {
       currentId = id
       if (id == 'nav_love') {
-        requestAnimationFrame(() => {
-          setVisible(true)
-        })
+        setVisible(true)
       }
     }
     const handleHide = () => {
@@ -152,7 +145,7 @@ const MylistPage = () => {
       global.state_event.off('navActiveIdUpdated', handleNavIdUpdate)
       global.state_event.off('themeUpdated', handleHide)
       global.state_event.off('languageChanged', handleHide)
-      global.state_event.on('configUpdated', handleConfigUpdated)
+      global.state_event.off('configUpdated', handleConfigUpdated)
     }
   }, [])
 
@@ -164,9 +157,24 @@ const SettingPage = () => {
   useEffect(() => {
     const handleNavIdUpdate = (id: CommonState['navActiveId']) => {
       if (id == 'nav_setting') {
-        requestAnimationFrame(() => {
-          setVisible(true)
-        })
+        setVisible(true)
+      }
+    }
+    global.state_event.on('navActiveIdUpdated', handleNavIdUpdate)
+
+    return () => {
+      global.state_event.off('navActiveIdUpdated', handleNavIdUpdate)
+    }
+  }, [])
+  return visible ? component : null
+}
+const DownloadPage = () => {
+  const [visible, setVisible] = useState(commonState.navActiveId == 'nav_download')
+  const component = useMemo(() => <Download />, [])
+  useEffect(() => {
+    const handleNavIdUpdate = (id: CommonState['navActiveId']) => {
+      if (id == 'nav_download') {
+        setVisible(true)
       }
     }
     global.state_event.on('navActiveIdUpdated', handleNavIdUpdate)
@@ -183,13 +191,15 @@ const viewMap = {
   nav_songlist: 1,
   nav_top: 2,
   nav_love: 3,
-  nav_setting: 4,
+  nav_download: 4,
+  nav_setting: 5,
 }
 const indexMap = [
   'nav_search',
   'nav_songlist',
   'nav_top',
   'nav_love',
+  'nav_download',
   'nav_setting',
 ] as const
 
@@ -268,7 +278,9 @@ const Main = () => {
     <PagerView ref={pagerViewRef}
       initialPage={activeIndexRef.current}
       // onPageScroll={handlePageScroll}
-      offscreenPageLimit={1}
+      // 全部页面常驻：切菜单时原生侧不再销毁/重建页面视图，
+      // 消除重建导致的首帧布局抖动（表现为文字瞬间放大/缩小）与切换卡顿
+      offscreenPageLimit={5}
       onPageSelected={onPageSelected}
       onPageScrollStateChanged={onPageScrollStateChanged}
       scrollEnabled={settingState.setting['common.homePageScroll']}
@@ -285,6 +297,9 @@ const Main = () => {
       </View>
       <View collapsable={false} key="nav_love" style={styles.pageStyle}>
         <MylistPage />
+      </View>
+      <View collapsable={false} key="nav_download" style={styles.pageStyle}>
+        <DownloadPage />
       </View>
       <View collapsable={false} key="nav_setting" style={styles.pageStyle}>
         <SettingPage />
@@ -316,6 +331,9 @@ const styles = createStyle({
     overflow: 'hidden',
   },
   pageStyle: {
+    flex: 1,
+    // 页面根视图固定占满且不裁剪，避免重建/切换时子视图拿到错误尺寸
+    overflow: 'hidden',
     // alignItems: 'center',
     // padding: 20,
   },

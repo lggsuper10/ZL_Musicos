@@ -1,5 +1,5 @@
-import { memo, useEffect, useMemo, useRef, useState, type ComponentRef } from 'react'
-import { FlatList, ScrollView, View, findNodeHandle, type TextStyle, type ViewStyle } from 'react-native'
+import { memo, useEffect, useCallback, useMemo, useRef, useState, type ComponentRef } from 'react'
+import { FlatList, ScrollView, View, useWindowDimensions, findNodeHandle, type TextStyle, type ViewStyle } from 'react-native'
 import TVAppleScaffold from '@/components/TV/TVAppleScaffold'
 import TVTopTabs, { isTabFocusArrival } from '@/components/TV/TVTopTabs'
 import TVText from '@/components/TV/TVText'
@@ -7,7 +7,7 @@ import TVButton from '@/components/TV/TVButton'
 import TVFadeOverlay from '@/components/TV/TVFadeOverlay'
 import Focusable from '@/components/TV/Focusable'
 import searchMusicState from '@/store/search/music/state'
-import { tvColors, tvFont, tvSize } from '@/theme/tv'
+import { tvColors, tvFont, tvSize, tvTokens } from '@/theme/tv'
 import { getBoardsList } from '@/core/leaderboard'
 import leaderboardState, { type BoardItem } from '@/store/leaderboard/state'
 import { pushTVDetailScreen, pushTVPlayerScreen } from '@/navigation/navigation'
@@ -35,6 +35,17 @@ function TVHistory({ componentId }: { componentId: string }) {
   const activeTabFocus = useRef<FocusNode>(null)
   const listRef = useRef<FlatList<BoardItem>>(null)
   const boardRefs = useRef<FocusRefMap>({})
+  // 记录列表可视高度与当前滚动位置：焦点变化时只在「目标行离开可见区」才滚动，
+  // 避免鼠标快速划过多行时每格都 scrollToOffset(animated) 反复打断重启滚动动画（卡顿根因）
+  const listHeightRef = useRef(0)
+  const currentOffsetRef = useRef(0)
+  // 与首页/我的歌单/播放列表同一套等比缩放：榜单列表按实测高度把标题、行字号、右栏预览整体缩进一屏，
+  // 保证不同屏高下一屏放得下，且与其它同类页的字号/比例一致
+  // 用 useWindowDimensions 同步拿到屏高，首帧即给出正确缩放系数，无需 onLayout+opacity 首帧隐藏
+  // （那套方案在部分 TV 设备上 onLayout 未触发会导致整页永久 opacity:0 白屏）。缩放行为不变：高屏不缩、矮屏等比缩进一屏。
+  const { height: windowHeight } = useWindowDimensions()
+  const contentScale = useMemo(() => Math.max(0.5, Math.min(1, windowHeight / tvSize(680))), [windowHeight])
+  const z = useCallback((value: number) => Math.max(1, Math.round(value * contentScale)), [contentScale])
   const queueFocusRefresh = useTVFocusRefresh()
   // 首次加载焦点补偿只做一次（见 load effect 内注释）
   const initialFocusDoneRef = useRef(false)
@@ -102,8 +113,15 @@ function TVHistory({ componentId }: { componentId: string }) {
   }
 
   const handleBoardFocus = (index: number) => {
-    setSelectedIndex(index)
-    listRef.current?.scrollToOffset({ offset: Math.max(0, index * ITEM_SIZE - ITEM_SIZE), animated: true })
+    if (selectedIndex !== index) setSelectedIndex(index)
+    const listHeight = listHeightRef.current
+    const offset = currentOffsetRef.current
+    const top = index * ITEM_SIZE
+    const bottom = top + ITEM_SIZE
+    // 目标行已在可见区内（鼠标慢移常见情况）→ 不滚动，只更新选中态，避免动画洪水
+    if (bottom > offset + listHeight || top < offset) {
+      listRef.current?.scrollToOffset({ offset: Math.max(0, top - ITEM_SIZE), animated: false })
+    }
   }
 
   const openBoard = (board = selectedBoard) => {
@@ -133,7 +151,7 @@ function TVHistory({ componentId }: { componentId: string }) {
       <TVTopTabs items={createTVTabs(componentId, 'new')} activeId="new" nextFocusDown={getSourceHandle(sourceTabs[0]?.id) ?? firstBoardFocus.getNodeHandle() ?? undefined} activeTabRef={activeTabFocus as any} onActiveTabReady={queueFocusRefresh} />
       <View style={styles.root}>
         <View style={styles.header}>
-          <TVText variant="pageTitle" style={styles.title}>{tvText.ranking}</TVText>
+          <TVText variant="pageTitle" style={[styles.title, { fontSize: z(tvTokens.heroTitle), lineHeight: z(tvFont(66)) }]}>{tvText.ranking}</TVText>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.sourceTabWrap} contentContainerStyle={styles.sourceTabContent}>
             {sourceTabs.map((tab, index) => (
               <Focusable
@@ -162,6 +180,9 @@ function TVHistory({ componentId }: { componentId: string }) {
               style={styles.list}
               data={boards}
               showsVerticalScrollIndicator={false}
+              scrollEventThrottle={16}
+              onScroll={(e: any) => { currentOffsetRef.current = e.nativeEvent.contentOffset.y }}
+              onLayout={(e: any) => { listHeightRef.current = e.nativeEvent.layout.height }}
               keyExtractor={getBoardKey}
               removeClippedSubviews={false}
               contentContainerStyle={styles.listContent}
@@ -186,8 +207,8 @@ function TVHistory({ componentId }: { componentId: string }) {
                     nextFocusRight={playerFocus.getNodeHandle() ?? undefined}
                     nextFocusDown={getBoardHandle(nextKey) ?? undefined}
                   >
-                    <TVText style={[styles.rowIndex, index < 3 ? styles.rowIndexTop : null]}>{String(index + 1).padStart(2, '0')}</TVText>
-                    <TVText style={styles.rowName} numberOfLines={1}>{item.name}</TVText>
+                    <TVText style={[styles.rowIndex, { fontSize: z(tvTokens.body), width: z(tvSize(40)) }, index < 3 ? styles.rowIndexTop : null]}>{String(index + 1).padStart(2, '0')}</TVText>
+                    <TVText style={[styles.rowName, { fontSize: z(tvTokens.cardTitle) }]} numberOfLines={1}>{item.name}</TVText>
                   </Focusable>
                 )
               }}
@@ -200,15 +221,15 @@ function TVHistory({ componentId }: { componentId: string }) {
 
           {/* 当前榜单预览：榜单接口没有封面图，右栏用「品牌色光晕 + 大字标题 + 序号水印」
               做视觉锚点，避免整页全是可以左右拉伸的纯文本行 */}
-          <View style={styles.preview}>
-            <View style={[styles.previewAccent, { backgroundColor: previewTint }]} />
-            <TVText variant="caption" style={[styles.previewKicker, { color: previewTint }]}>
+          <View style={[styles.preview, { minWidth: z(tvSize(280)), maxHeight: z(tvSize(500)), borderRadius: z(tvSize(28)), padding: z(tvSize(26)) }]}>
+            <View style={[styles.previewAccent, { backgroundColor: previewTint, width: z(tvSize(56)), height: z(tvSize(5)), borderRadius: z(tvSize(3)), marginBottom: z(tvSize(16)) }]} />
+            <TVText variant="caption" style={[styles.previewKicker, { color: previewTint, marginBottom: z(tvSize(8)) }]}>
               {`${boardSource ? getSourceName(boardSource) : tvText.noMusic}${dot}${tvText.charts}`}
             </TVText>
-            <TVText style={styles.previewName} numberOfLines={3}>{selectedBoard?.name ?? tvText.noAvailableCharts}</TVText>
-            {selectedBoard ? <TVText variant="caption" style={styles.previewHint}>{tvText.chartPreviewHint}</TVText> : null}
+            <TVText style={[styles.previewName, { fontSize: z(tvTokens.railTitle), lineHeight: z(tvFont(36)), marginTop: z(tvSize(8)) }]} numberOfLines={3}>{selectedBoard?.name ?? tvText.noAvailableCharts}</TVText>
+            {selectedBoard ? <TVText variant="caption" style={[styles.previewHint, { marginTop: z(tvSize(6)) }]}>{tvText.chartPreviewHint}</TVText> : null}
             <View pointerEvents="none" style={styles.previewWatermarkWrap}>
-              <TVText style={[styles.previewWatermark, { color: previewTint }]}>{String(selectedIndex + 1).padStart(2, '0')}</TVText>
+              <TVText style={[styles.previewWatermark, { color: previewTint, fontSize: z(tvFont(120)), lineHeight: z(tvFont(128)) }]}>{String(selectedIndex + 1).padStart(2, '0')}</TVText>
             </View>
           </View>
         </View>

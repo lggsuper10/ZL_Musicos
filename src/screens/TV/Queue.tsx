@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from 'react'
-import { FlatList, View, findNodeHandle, type ImageStyle, type TextStyle, type ViewStyle } from 'react-native'
+import { FlatList, View, useWindowDimensions, findNodeHandle, type ImageStyle, type TextStyle, type ViewStyle } from 'react-native'
 import TVAppleScaffold from '@/components/TV/TVAppleScaffold'
 import TVTopTabs from '@/components/TV/TVTopTabs'
 import TVText from '@/components/TV/TVText'
@@ -58,11 +58,12 @@ function TVQueue({ componentId }: { componentId: string }) {
 
   // 与首页同一套等比缩放：首页按可用高度把 hero + 歌单架整体缩进一屏，
   // 播放列表页用同一个系数缩放标题、行高和预览，两个标签页的字号/留白比例才一致
+  // 用 useWindowDimensions 同步拿屏高，首帧即正确缩放，无需 onLayout+opacity 首帧隐藏（避免白屏回归）
+  const { height: windowHeight } = useWindowDimensions()
+  const contentScale = useMemo(() => Math.max(0.5, Math.min(1, windowHeight / tvSize(680))), [windowHeight])
+  // 列表可视高度：仅供「进入页自动滚动到当前播放歌曲」定位 effect 使用（root onLayout 测量），
+  // 与 contentScale 解耦，避免再和首帧缩放隐藏耦合导致白屏
   const [contentHeight, setContentHeight] = useState(0)
-  const contentScale = useMemo(() => {
-    if (!contentHeight) return 1
-    return Math.max(0.5, Math.min(1, contentHeight / tvSize(680)))
-  }, [contentHeight])
   const z = useCallback((value: number) => Math.max(1, Math.round(value * contentScale)), [contentScale])
   // 行高 = 封面高度 + 上下内边距 + 上下边框 + 分隔线。
   // 边框也算进布局，行高公式必须和 TVMusicRow 里的实际值一致，
@@ -332,10 +333,8 @@ function TVQueue({ componentId }: { componentId: string }) {
   return (
     <TVAppleScaffold image={currentMusicInfo.pic}>
       <TVTopTabs items={createTVTabs(componentId, 'queue')} activeId="queue" nextFocusDown={playModeFocus.getNodeHandle() ?? firstQueueFocus.getNodeHandle() ?? undefined} activeTabRef={activeTabFocus} onActiveTabReady={tabRefresh} />
-      <View style={styles.root} onLayout={event => {
-        const height = Math.round(event.nativeEvent.layout.height)
-        // 只认第一次有效测量：顶栏 tab 获得/失去焦点时自身高度会变（发光的选中胶囊），
-        // 若跟着重算，一按方向键整页字号和行高就跳一下。首次值锁定后不再变。
+      <View style={styles.root} onLayout={(e: any) => {
+        const height = Math.round(e.nativeEvent.layout.height)
         if (height < 120) return
         setContentHeight(prev => prev || height)
       }}>

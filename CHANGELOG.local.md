@@ -675,6 +675,194 @@ tab「排行榜」`→左` 由海报卡改为相邻 tab；960x540dp 入口卡 `�
 
 ---
 
+## ✅ 批次 1：手机端切换体验修复（2026-10-24）
+
+**动机**：用户反馈 ① 切换菜单反应慢；② 切换界面时字突然变大又变小；③ 菜单选中态看不清、分不出当前页。
+本轮只动手机竖屏（`Home/Vertical`）+ 横屏侧栏（`Horizontal/Aside`）+ 两个公共组件，TV 端未碰。
+
+### 根因与修法
+
+| # | 问题 | 根因 | 修法 |
+|---|---|---|---|
+| 1 | 切菜单卡顿 | `DrawerLayoutFixed.fixWidth()` 无合流：歌单/排行榜/我的列表三个页面都监听 `navActiveIdUpdated` 并调 `fixWidth()`，每次调用都是 `setW(width-1)` → 布局回调 → `setW('100%')` 一整轮**两次整树重排**，一次切菜单最多 6 次重排 | `fixDrawerWidth` 加"修复中短路"（`changed` 为 true 即返回），同一次事件广播只 fix 一次，6 次重排 → 2 次 |
+| 2 | 切菜单卡顿 | `Main.tsx` 的 5 个页面组件用 `requestAnimationFrame` 包一层才 `setVisible(true)`，白多一帧延迟 | 去掉 rAF，直接 `setVisible(true)`（React 自动批处理，无副作用） |
+| 3 | 越用越卡 | `Main.tsx` SongList/Leaderboard/Mylist 三个 Page 的 cleanup 里 `configUpdated` 误写为 `.on`（应为 `.off`），主题/语言/列表显示设置变更导致页面重挂载时**每次泄漏一个监听器**（SearchPage 上游已修，漏了另外三个） | 三处 `.on` → `.off` |
+| 4 | 字突然变大又变小 | PagerView `offscreenPageLimit={1}`：隔页切换时原生侧销毁/重建页面视图，新挂载页面首帧布局尺寸不对，文字排版先错位再纠正 | `offscreenPageLimit={4}`（5 页全常驻，切页零重建）+ 页面根 View 明确 `flex:1`+`overflow:hidden` 稳定布局基准。注：运行时字号无任何代码路径可变（见下方"字号排查结论"），此改动同时消除重建抖动 |
+| 5 | 选中态看不清 | `DrawerNav`/`Aside` 选中项只把图标/文字改成主题色，无背景、无指示条，与未选项对比弱 | 选中项 = 整行背景高亮（`c-primary-background`）+ 左侧 4px 主题色指示条 + 图标/文字主题色，竖屏横屏统一 |
+| 6 | 切菜单体感慢 | `handlePress` 先 `changeMenuVisible(false)`（关抽屉动画）再 `setNavActiveId`，切页排在动画后面 | 调整为**先切页再关抽屉**，页面切换不等抽屉动画，两者并行 |
+| 7 | 字号设置不生效 | `setFontSize` 只更新 `commonState.fontSize` 和存储，**没有同步 `global.lx.fontSize`**（`setSpText` 读的是后者）→ 设置页改字号只有预览变，其他界面要重启 app 才生效 | `core/common.ts` 补 `global.lx.fontSize = size` |
+
+### 字号排查结论（给后续留档）
+
+`setSpText(size) = getTextSize(size) × global.lx.fontSize`：
+- `getTextSize` 的输入（`screenW/screenH/fontScale`）全是 `pixelRatio.ts` 模块级常量，运行时不变；
+- `global.lx.fontSize` 全项目**唯一赋值点是 `app.ts:17`**（启动时读存储），runtime 无第二处（本轮修好了 `setFontSize` 这处应有的同步）。
+- 即：release 包里不存在运行时改字号的路径。若用户仍遇到，靠 `Text.tsx` 的 dev 诊断日志
+  （`[Text] global.lx.fontSize changed: x -> y`）在真机抓 logcat 定位。
+
+### 改动文件（均为修改，无新增）
+
+| 文件 | 改了哪一段 |
+|---|---|
+| `src/components/common/DrawerLayoutFixed.tsx` | `fixDrawerWidth` 加修复中短路判断 |
+| `src/screens/Home/Vertical/Main.tsx` | ① 5 处 rAF 包裹的 `setVisible` 改为直接调用；② 3 处 cleanup `.on`→`.off`；③ `offscreenPageLimit` 1→4；④ `pageStyle` 加 `flex:1`/`overflow:hidden` |
+| `src/screens/Home/Vertical/DrawerNav.tsx` | ① `handlePress` 调整顺序为先 `setNavActiveId`；② 新增 `activeIndicator` 样式；③ `MenuItem` 选中分支加背景高亮+指示条 |
+| `src/screens/Home/Horizontal/Aside.tsx` | 同 DrawerNav：顺序调整 + 选中态背景/指示条 |
+| `src/core/common.ts` | `setFontSize` 补 `global.lx.fontSize = size` |
+| `src/components/common/Text.tsx` | 加 dev-only 字号诊断日志（release 包零开销） |
+
+**验证**：eslint 6 个改动文件全绿（0 输出）；`tsc --noEmit` 全量 15 个 error 均为上游遗留基线
+（TV/Focusable、tvFocusManager、timeoutExit、CommentBtn 等），改动文件 0 新增 error。
+**真机验收项**：连续切换 5 个菜单无掉帧；抽屉菜单选中行一眼可辨；设置页改字号立即全局生效。
+
+---
+
+## ✅ 批次 2：排行榜界面统一 + 我的歌单添加本地歌（2026-10-24）
+
+**动机**：用户反馈 ⑤ 排行榜界面要参照歌单页（顶部菜单"歌单"打开的界面）优化、统一风格，上下滑动响应要快；
+⑦ 我的歌单要能添加本地歌（原来只能选文件夹扫描，不能选单个文件）。
+
+### 排行榜与歌单页统一
+
+| 差异点 | 歌单页（基准） | 排行榜（改后） |
+|---|---|---|
+| 顶部栏下边框 | 无 | **去掉** `borderBottomWidth`/`borderBottomColor`（`Leaderboard/Vertical/HeaderBar/index.tsx`） |
+| 顶部栏高度 | 38 | 38（本来就一致，未动） |
+| 当前筛选按钮文字色 | 默认文字色 | 榜单名从 `c-button-font`（主题色）改为默认色，padding 15 对齐"当前标签"按钮（`ActiveListName.tsx`） |
+| 音源选择位置 | 最右 | 最右（本来就一致） |
+
+### 排行榜滑动/切换优化
+
+| 问题 | 修法 |
+|---|---|
+| 切榜单先 `setList([])` 再拉数据，中间列表全空闪白 | `Leaderboard/MusicList.tsx` 未命中缓存时**保留旧列表**、只置 `loading` 态，新数据到达再替换；缓存命中直接铺数据 |
+| 加载更多触发过早（还剩半屏就触发），滑动中途 footer 频繁切"加载中" | `OnlineList/List.tsx` `onEndReachedThreshold` 0.5 → 0.3 |
+| `ListItem` memo 比较漏了 `showSource`/`rowInfo`，来源徽标/行宽变化不重渲染 | 比较函数补两项（顺带修的功能问题） |
+
+> 滑动流畅度的主因（切页 fixWidth 重排、PagerView 页面重建）已在批次 1 修掉，此处是残余项。
+
+### 我的歌单添加本地歌
+
+| 项 | 说明 |
+|---|---|
+| 入口 | 歌单长按菜单在"添加本地歌曲"（选文件夹，原有）后面新增"选择音频文件" |
+| 选择器 | `dirOnly: false` + `AUDIO_FILE_EXT_RXP`（mp3/flac/wav/ape/ogg/opus/m4a/aac/wma）过滤。设置里开了"使用系统文件选择器"时走 SAF 单选；关闭时走内置文件浏览器点选文件 |
+| 落库 | 复用已有 `createLocalMusicInfos`（读元数据）+ `addListMusics`；成功/失败 toast 沿用本地歌曲系列文案 |
+
+### 改动文件（均为修改，无新增）
+
+| 文件 | 改了哪一段 |
+|---|---|
+| `src/screens/Home/Views/Leaderboard/Vertical/HeaderBar/index.tsx` | 去掉容器下边框与 `borderBottomColor` 内联、清理 `useTheme`/`BorderWidths` import |
+| `src/screens/Home/Views/Leaderboard/Vertical/HeaderBar/ActiveListName.tsx` | 文字色改默认、padding 15、清理 `useTheme` |
+| `src/screens/Home/Views/Leaderboard/MusicList.tsx` | `loadList` 不再先清空列表 |
+| `src/components/OnlineList/List.tsx` | `onEndReachedThreshold` 0.5→0.3 |
+| `src/components/OnlineList/ListItem.tsx` | memo 比较补 `showSource`/`rowInfo` |
+| `src/screens/Home/Views/Mylist/MyList/listAction.ts` | 新增 `handleImportMediaFiles` |
+| `src/screens/Home/Views/Mylist/MyList/ListImportExport.tsx` | 新增 `selectFiles` 方法 + `selectFiles` action 分支 |
+| `src/screens/Home/Views/Mylist/MyList/ListMenu.tsx` | 菜单项 `local_files` + `onSelectLocalFiles` prop |
+| `src/screens/Home/Views/Mylist/MyList/index.tsx` | 接 `onSelectLocalFiles` |
+| `src/config/constant.ts` | 新增 `AUDIO_FILE_EXT_RXP` |
+| `src/lang/zh-cn.json` / `zh-tw.json` / `en-us.json` | 新增 `list_select_audio_file` / `list_select_audio_file_desc` |
+
+**验证**：eslint 10 个改动文件全绿；`tsc --noEmit` 全量 15 error（上游遗留基线，与批 1 一致），改动文件 0 新增；
+3 个语言文件 JSON 解析通过、新键存在。
+
+---
+
+## ✅ 批次 3：歌曲下载完整版（2026-10-24）
+
+**动机**：用户反馈 ⑥ 播放的歌曲要允许下载到本地。选定档位：**完整版 + 下载完自动进本地歌单**。
+
+### 架构
+
+```mermaid
+graph LR
+    A["歌曲更多菜单<br/>(歌单/排行榜/搜索/我的列表)"] --> C
+    B["播放页更多按钮<br/>(竖屏+横屏)"] --> C
+    C["DownloadBtn<br/>音质选择弹窗"] --> D["core/download<br/>任务核心"]
+    D --> E["RNFS.downloadFile<br/>/sdcard/Music/洛雪音乐"]
+    E --> F["buildLocalMusicInfo"]
+    F --> G["「本地歌曲」歌单<br/>userlist_download"]
+    G --> H["下载管理页<br/>进度/暂停/继续/删除"]
+```
+
+### 关键设计决策
+
+| 决策点 | 结论 | 依据 |
+|---|---|---|
+| 存储路径 | `/sdcard/Music/洛雪音乐`（公共目录，文件管理器可见），逐级 mkdir | `targetSdk=29` + `requestLegacyExternalStorage=true`，legacy 存储生效无需 SAF。**上游若升 targetSdk 30+ 需改 SAF/MediaStore**（代码注释已标注） |
+| 完成后进歌单 | 固定 id `userlist_download` 的普通用户歌单（名"本地歌曲"），复用 `createUserList`/`addListMusics`，不碰 list 核心；按 filePath 去重 | `LIST_IDS.DOWNLOAD` 是保留 id 但 list 体系无对应歌单，自建用户歌单最稳 |
+| URL 获取 | `getMusicUrl({ isRefresh: true })` 拿新地址，拿不到直接置 error 不进队列 | 播放缓存 URL 有时效 |
+| 音质 | 弹窗按 `meta._qualitys` 过滤（24bit/FLAC/320K/128K），仅一个可用音质时跳过弹窗直接下 | 复用 `quality_*` 现有文案 |
+| 队列 | 并发 2，任务列表存 AsyncStorage（`@download_list`），重启恢复；中断的 run → pause | `saveData` 已按 key 串行化 |
+| 进度通知 | 复用上游遗留的 `app_event.downloadListUpdate`，300ms 节流 | 事件已存在，零新增 |
+
+### 新增文件（无冲突，重做直接复制）
+
+| 文件 | 作用 |
+|---|---|
+| `src/core/download/index.ts` | 下载核心：`addDownloadTask/pauseDownloadTask/resumeDownloadTask/removeDownloadTask/clearCompletedDownloadTasks/getDownloadList/onDownloadListUpdate/initDownload`；完成自动建歌单并去重加入 |
+| `src/components/DownloadBtn.tsx` | 通用下载按钮：音质弹窗 + 调核心；`showIcon` 形态给播放页，无按钮形态给列表菜单内挂载 |
+| `src/screens/PlayDetail/components/DownloadBtn.tsx` | 播放页专用包装：订阅 `usePlayMusicInfo`，当前播放下载任务时取原始在线歌曲 |
+| `src/screens/Home/Views/Download/index.tsx` | 下载管理页（替代原占位 .js，已删）：保存位置/任务行/进度条/暂停/继续/删除/清除已完成/空态 |
+
+### 修改的上游文件
+
+| 文件 | 改了哪一段 |
+|---|---|
+| `src/config/constant.ts` | ① `NAV_MENUS` 加回 `nav_download`（原注释项）；② 新增 `DOWNLOAD_LIST_ID` |
+| `src/components/OnlineList/ListMenu.tsx` | 恢复注释掉的 `download` 菜单项；新增 `positionRef`/`downloadRef`，`download` 动作打开音质弹窗 |
+| `src/screens/Home/Views/Mylist/MusicList/ListMenu.tsx` | 同上（local 歌曲传全量 musicInfo，由 DownloadBtn 内部提示"无需下载"） |
+| `src/screens/Home/Vertical/Main.tsx` | 新增 `DownloadPage`；`viewMap`/`indexMap` 插入 `nav_download: 4`（nav_setting 顺延为 5）；PagerView 加一页；`offscreenPageLimit` 4→5 |
+| `src/screens/Home/Horizontal/Main.tsx` | switch 加 `nav_download` 分支 |
+| `src/screens/PlayDetail/Vertical/Player/components/MoreBtn/index.tsx` | 按钮区加 `<DownloadBtn />`（播放页组件） |
+| `src/screens/PlayDetail/Horizontal/MoreBtn/index.tsx` | 同上 |
+| `src/lang/zh-cn.json` / `zh-tw.json` / `en-us.json` | 新增 `nav_download` + `download*` / `quality_standard` 共 25 键 |
+
+**已知边界**：
+- 系统文件选择器（`common.useSystemFileSelector`）开启时音质弹窗走 SAF 单选没问题，但下载本身与系统选择器无关（RNFS 直写）。
+- 下载完成 toast 的 `{name}` 参数与 i18n 变量填充已按项目惯例传参。
+- 卸载 app 会同时删除公共目录里的文件（legacy 存储行为），属预期。
+
+**验证**：eslint 全部改动文件（含新增）0 错误；`tsc --noEmit` 全量 15 error（上游遗留基线，与批 1/2 一致），改动文件 0 新增。
+
+---
+
+## ✅ 批次 4：TV 端下载功能（2026-10-24）
+
+**动机**：用户反馈“没看到下载功能、也没有本地歌曲”——批次 3 的下载只做在手机端，TV 端没有任何入口。
+
+### TV 端交互设计（沿用现有 TV 组件体系）
+
+| 入口 | 位置 | 行为 |
+|---|---|---|
+| 下载全部 | 歌单/榜单/我的歌单详情页操作区（“播放全部”右侧） | 把当前列表所有在线歌入队，音质取播放音质设置；本地歌跳过；toast 汇报数量 |
+| 下载管理 | 同上，操作区第三个按钮 | 打开全屏管理面板 |
+| 单曲下载 | 播放页控制栏（下一首右侧第 5 个圆钮） | 弹音质选择（TVDialog 按钮组，仅一个可用音质时直接入队） |
+
+### 新增文件
+
+| 文件 | 作用 |
+|---|---|
+| `src/components/TV/TVDownloadPanel.tsx` | TV 下载管理面板：全屏覆盖（返回键关闭）、任务行（歌名/歌手·音质/状态/进度条/速度）、行按 OK 弹操作菜单（暂停/继续/删除）、清除已完成、保存位置说明、空态 |
+
+### 修改的文件
+
+| 文件 | 改了哪一段 |
+|---|---|
+| `src/screens/TV/Detail.tsx` | ① import 下载核心/TVDownloadPanel；② 新增 `showDownloadPanel` state 与 `handleDownloadAll`；③ 操作区加“下载全部”“下载管理”两个 TVButton 并重连焦点链（playAll→downloadAll→downloadManage→back）；④ 挂载 TVDownloadPanel |
+| `src/screens/TV/Player.tsx` | ① import 下载核心/showTVDialog/toast；② 新增 `downloadFocus` 与 `handleDownload`（音质弹窗）；③ primaryControls 加下载圆钮（focus 链 next→download）；④ 顺手修上游既有 4 个 lint error（重复 import、多空格、confusing-void cleanup） |
+| `src/screens/TV/labels.ts` | 新增 download/downloadAll/downloadManage/音质标签/状态文案等 28 键 |
+
+### 「本地歌曲」歌单（TV 端自动可见）
+
+下载完成由 `core/download` 自动创建固定 id `userlist_download` 的用户歌单并加入歌曲；TV「我的歌单」页读 `useMyList()`，**自动出现“本地歌曲”卡**（无需改动）。点进去即可播放（走 Detail 的 userlist → TEMP 播放链路）。用户此前“没看到本地歌曲”是因为没有任何下载入口、歌单从未被创建。
+
+**验证**：eslint 4 个改动文件 0 error（Detail.tsx:131 的 exhaustive-deps 警告为上游既有）；`tsc --noEmit` 全量 15 error（上游遗留基线），改动文件 0 新增。
+
+---
+
 ## 维护约定
 
 1. 每完成一项改动，就在「已完成」区加一条，写明：日期、文件、改了什么、是新增还是修改。

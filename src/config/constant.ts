@@ -80,6 +80,9 @@ export const storageDataPrefix = {
   userApi: '@user_api__',
 } as const
 
+// 「本地歌曲」歌单固定 id：下载完成的歌曲自动加入这个歌单
+export const DOWNLOAD_LIST_ID = 'userlist_download'
+
 // v0.x.x 版本的 data keys
 export const storageDataPrefixOld = {
   setting: '@setting',
@@ -103,7 +106,7 @@ export const NAV_MENUS = [
   { id: 'nav_songlist', icon: 'album' },
   { id: 'nav_top', icon: 'leaderboard' },
   { id: 'nav_love', icon: 'love' },
-  // { id: 'download', icon: 'download-2' },
+  { id: 'nav_download', icon: 'download-2' },
   { id: 'nav_setting', icon: 'setting' },
 ] as const
 
@@ -111,6 +114,8 @@ export type NAV_ID_Type = typeof NAV_MENUS[number]['id']
 
 export const LXM_FILE_EXT_RXP = ['json', 'lxmc', 'bin']
 export const USER_API_SOURCE_FILE_EXT_RXP = ['js']
+// 常见音频文件扩展名（用于「添加本地歌曲-选择文件」的过滤）
+export const AUDIO_FILE_EXT_RXP = ['mp3', 'flac', 'wav', 'ape', 'ogg', 'opus', 'm4a', 'aac', 'wma']
 
 export const MUSIC_TOGGLE_MODE = {
   listLoop: 'listLoop', // 列表循环

@@ -1,7 +1,7 @@
 import ChoosePath, { type ChoosePathType } from '@/components/common/ChoosePath'
-import { LXM_FILE_EXT_RXP } from '@/config/constant'
+import { AUDIO_FILE_EXT_RXP, LXM_FILE_EXT_RXP } from '@/config/constant'
 import { forwardRef, useImperativeHandle, useRef, useState } from 'react'
-import { handleExport, handleImport, handleImportMediaFile } from './listAction'
+import { handleExport, handleImport, handleImportMediaFile, handleImportMediaFiles } from './listAction'
 
 export interface SelectInfo {
   listInfo: LX.List.MyListInfo
@@ -9,7 +9,7 @@ export interface SelectInfo {
   index: number
   // listId: string
   // single: boolean
-  action: 'import' | 'export' | 'selectFile'
+  action: 'import' | 'export' | 'selectFile' | 'selectFiles'
 }
 const initSelectInfo = {}
 
@@ -24,6 +24,7 @@ export interface ListImportExportType {
   import: (listInfo: LX.List.MyListInfo, index: number) => void
   export: (listInfo: LX.List.MyListInfo, index: number) => void
   selectFile: (listInfo: LX.List.MyListInfo, index: number) => void
+  selectFiles: (listInfo: LX.List.MyListInfo, index: number) => void
 }
 
 export default forwardRef<ListImportExportType, {}>((props, ref) => {
@@ -102,6 +103,26 @@ export default forwardRef<ListImportExportType, {}>((props, ref) => {
         })
       }
     },
+    selectFiles(listInfo, index) {
+      selectInfoRef.current = {
+        action: 'selectFiles',
+        listInfo,
+        index,
+      }
+      const options = {
+        title: global.i18n.t('list_select_audio_file_desc'),
+        dirOnly: false,
+        filter: AUDIO_FILE_EXT_RXP,
+      }
+      if (visible) {
+        choosePathRef.current?.show(options)
+      } else {
+        setVisible(true)
+        requestAnimationFrame(() => {
+          choosePathRef.current?.show(options)
+        })
+      }
+    },
   }))
 
 
@@ -115,6 +136,9 @@ export default forwardRef<ListImportExportType, {}>((props, ref) => {
         break
       case 'selectFile':
         void handleImportMediaFile(selectInfoRef.current.listInfo, path)
+        break
+      case 'selectFiles':
+        void handleImportMediaFiles(selectInfoRef.current.listInfo, [path])
         break
     }
   }

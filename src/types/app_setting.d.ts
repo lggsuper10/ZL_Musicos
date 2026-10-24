@@ -362,6 +362,11 @@ declare global {
       'download.fileName': '歌名 - 歌手' | '歌手 - 歌名' | '歌名'
 
       /**
+       * 下载保存位置（本地目录 URI）。为空则用默认的 externalStorageDirectoryPath/Music/洛雪音乐
+       */
+      'download.savePath': string
+
+      /**
        * 是否启用同步
        */
       'sync.enable': boolean

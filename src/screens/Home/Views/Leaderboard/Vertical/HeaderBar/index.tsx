@@ -9,10 +9,10 @@ import { createStyle } from '@/utils/tools'
 import SourceSelector, {
   type SourceSelectorType,
 } from './SourceSelector'
-import { useTheme } from '@/store/theme/hook'
+// import { useTheme } from '@/store/theme/hook'
 // import { BorderWidths } from '@/theme'
 import ActiveListName, { type ActiveListNameType } from './ActiveListName'
-import { BorderWidths } from '@/theme'
+// import { BorderWidths } from '@/theme'
 
 export interface HeaderBarProps {
   onShowBound: () => void
@@ -27,7 +27,6 @@ export interface HeaderBarType {
 export default forwardRef<HeaderBarType, HeaderBarProps>(({ onShowBound, onSourceChange }, ref) => {
   const activeListNameRef = useRef<ActiveListNameType>(null)
   const sourceSelectorRef = useRef<SourceSelectorType>(null)
-  const theme = useTheme()
 
   useImperativeHandle(ref, () => ({
     setBound(source, id, name) {
@@ -37,8 +36,9 @@ export default forwardRef<HeaderBarType, HeaderBarProps>(({ onShowBound, onSourc
   }), [])
 
 
+  // 视觉与歌单页（SongList/HeaderBar）对齐：高 38、无下边框、音源选择在最右
   return (
-    <View style={{ ...styles.currentList, borderBottomColor: theme['c-border-background'] }}>
+    <View style={styles.currentList}>
       <SourceSelector ref={sourceSelectorRef} onSourceChange={onSourceChange} />
       <ActiveListName ref={activeListNameRef} onShowBound={onShowBound} />
     </View>
@@ -51,7 +51,6 @@ const styles = createStyle({
     height: 38,
     zIndex: 2,
     // paddingRight: 10,
-    borderBottomWidth: BorderWidths.normal,
   },
   selector: {
     width: 86,

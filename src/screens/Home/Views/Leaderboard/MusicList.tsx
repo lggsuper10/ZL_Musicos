@@ -20,12 +20,14 @@ export default forwardRef<MusicListType, {}>((props, ref) => {
   useImperativeHandle(ref, () => ({
     async loadList(source, id) {
       const listDetailInfo = boardState.listDetailInfo
-      listRef.current?.setList([])
       if (listDetailInfo.id == id && listDetailInfo.source == source && listDetailInfo.list.length) {
+        // 缓存命中：直接铺数据，不清空（避免切榜单时列表闪白）
         requestAnimationFrame(() => {
           listRef.current?.setList(listDetailInfo.list)
         })
       } else {
+        // 未命中：保留当前列表作为占位，仅显示加载态，
+        // 新数据到达后再替换，避免「先清空再拉数据」的空白闪现
         listRef.current?.setStatus('loading')
         const page = 1
         setListDetailInfo(id)

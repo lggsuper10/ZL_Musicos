@@ -1,7 +1,7 @@
 import { forwardRef, useImperativeHandle, useState } from 'react'
 import { TouchableOpacity } from 'react-native'
 
-import { useTheme } from '@/store/theme/hook'
+// import { useTheme } from '@/store/theme/hook'
 import { createStyle } from '@/utils/tools'
 import Text from '@/components/common/Text'
 
@@ -13,7 +13,6 @@ export interface ActiveListNameType {
 }
 
 export default forwardRef<ActiveListNameType, ActiveListNameProps>(({ onShowBound }, ref) => {
-  const theme = useTheme()
   let [currentListName, setCurrentListName] = useState('')
 
   useImperativeHandle(ref, () => ({
@@ -24,7 +23,7 @@ export default forwardRef<ActiveListNameType, ActiveListNameProps>(({ onShowBoun
 
   return (
     <TouchableOpacity onPress={onShowBound} style={styles.currentList}>
-      <Text numberOfLines={1} style={styles.currentListText} color={theme['c-button-font']}>{currentListName}</Text>
+      <Text numberOfLines={1} style={styles.currentListText}>{currentListName}</Text>
     </TouchableOpacity>
   )
 })
@@ -34,7 +33,8 @@ const styles = createStyle({
   currentList: {
     flex: 1,
     flexDirection: 'row',
-    paddingRight: 2,
+    paddingLeft: 15,
+    paddingRight: 15,
     // height: 36,
     alignItems: 'center',
     // backgroundColor: 'rgba(0,0,0,0.2)',

@@ -29,9 +29,24 @@ export interface TextProps extends _TextProps {
 //   }
 // }
 
+// 诊断用（仅开发包）：切换界面时若全局字号缩放发生变化则打日志，
+// 用于定位用户反馈的「切换界面字突然变大又变小」问题。
+// 已知 setSpText 的唯一运行时输入是 global.lx.fontSize（全项目仅 app.ts 启动时赋值），
+// 若复现时该日志出现，说明存在未被静态分析发现的赋值路径。
+let lastFontScale = 0
+const warnFontScaleChange = () => {
+  if (!__DEV__) return
+  const scale = global.lx.fontSize
+  if (lastFontScale && Math.abs(lastFontScale - scale) > 0.001) {
+    console.warn(`[Text] global.lx.fontSize changed: ${lastFontScale} -> ${scale}`)
+  }
+  lastFontScale = scale
+}
+
 export default memo(({ style, size = 15, color, children, ...props }: TextProps) => {
   const theme = useTheme()
   const textShadow = useTextShadow()
+  warnFontScaleChange()
   style = StyleSheet.compose(textShadow ? {
     // fontFamily: 'System',
     textShadowColor: theme['c-primary-dark-300-alpha-800'],

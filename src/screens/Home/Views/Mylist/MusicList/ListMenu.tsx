@@ -3,6 +3,7 @@ import { useI18n } from '@/lang'
 import Menu, { type Menus, type MenuType, type Position } from '@/components/common/Menu'
 import { hasDislike } from '@/core/dislikeList'
 import { existsFile } from '@/utils/fs'
+import DownloadBtn, { type DownloadBtnType } from '@/components/DownloadBtn'
 
 export interface SelectInfo {
   musicInfo: LX.Music.MusicInfo
@@ -43,11 +44,14 @@ export default forwardRef<ListMenuType, ListMenuProps>((props, ref) => {
   const [visible, setVisible] = useState(false)
   const menuRef = useRef<MenuType>(null)
   const selectInfoRef = useRef<SelectInfo>(initSelectInfo as SelectInfo)
+  const positionRef = useRef<Position>({ x: 0, y: 0, w: 0, h: 0 })
+  const downloadRef = useRef<DownloadBtnType>(null)
   const [menus, setMenus] = useState<Menus>([])
 
   useImperativeHandle(ref, () => ({
     show(selectInfo, position) {
       selectInfoRef.current = selectInfo
+      positionRef.current = position
       handleSetMenu(selectInfo.musicInfo)
       if (visible) menuRef.current?.show(position)
       else {
@@ -64,7 +68,7 @@ export default forwardRef<ListMenuType, ListMenuProps>((props, ref) => {
     const menu = [
       { action: 'play', label: t('play') },
       { action: 'playLater', label: t('play_later') },
-      // { action: 'download', label: '下载' },
+      { action: 'download', label: t('download') },
       { action: 'add', label: t('add_to') },
       { action: 'move', label: t('move_to') },
       { action: 'changePosition', label: t('change_position') },
@@ -101,6 +105,9 @@ export default forwardRef<ListMenuType, ListMenuProps>((props, ref) => {
       case 'playLater':
         props.onPlayLater(selectInfo)
 
+        break
+      case 'download':
+        downloadRef.current?.show(positionRef.current)
         break
       case 'add':
         props.onAdd(selectInfo)
@@ -147,7 +154,10 @@ export default forwardRef<ListMenuType, ListMenuProps>((props, ref) => {
 
   return (
     visible
-      ? <Menu ref={menuRef} menus={menus} onPress={handleMenuPress} />
+      ? <>
+          <Menu ref={menuRef} menus={menus} onPress={handleMenuPress} />
+          <DownloadBtn ref={downloadRef} musicInfo={selectInfoRef.current.musicInfo} />
+        </>
       : null
   )
 })
