@@ -11,8 +11,10 @@ import { getTVLayoutMetrics, tvColors, tvSize } from '@/theme/tv'
 import { useIsPlay, usePlayerMusicInfo, useProgress } from '@/store/player/hook'
 import { playNext, playPrev, togglePlay } from '@/core/player/player'
 import { addDownloadTask } from '@/core/download'
+import { getPlayQuality } from '@/core/music/utils'
 import { showTVDialog } from '@/components/TV/TVDialog'
 import { toast } from '@/utils/tools'
+import settingState from '@/store/setting/state'
 import { useSettingValue } from '@/store/setting/hook'
 import { updateSetting } from '@/core/common'
 import { useTVFocusRef } from '@/components/TV/useTVFocusRef'
@@ -106,7 +108,14 @@ function TVPlayer({ componentId }: { componentId: string }) {
     if (qualitys?.['320k']) options.push('320k')
     if (qualitys?.['128k']) options.push('128k')
     if (!options.length) {
-      toast(tvText.downloadQualityNone)
+      // 歌曲信息没带音质字段（用户自定义音源、旧版歌单、换源拿到的信息常见）：
+      // 以前这里直接拦死并提示「暂无可下载音质」，但播放本身就会按默认音质去取地址，
+      // 下载同样可以先试一发 —— 真拿不到 URL 时下载模块会提示「下载准备失败」。
+      // _qualitys 整个字段缺失时 getPlayQuality 会直接读 undefined，这里兜底 128k
+      const fallback = onlineMusicInfo.meta._qualitys
+        ? getPlayQuality(settingState.setting['player.playQuality'], onlineMusicInfo)
+        : '128k'
+      void addDownloadTask(onlineMusicInfo, fallback)
       return
     }
     const qualityLabels: Partial<Record<LX.Quality, string>> = {
@@ -402,6 +411,9 @@ function TVPlayer({ componentId }: { componentId: string }) {
       if (!isSeekKey && !isSelectKey) return
       if (!musicInfo.id) return
       if (controlFocusCountRef.current > 0) return
+      // 控制栏显示时，OK/方向键全部交给焦点所在按钮处理，绝不全局播放/暂停
+      // （防「看着下载/常驻按钮、焦点却在播放键」导致的盲触发；按钮本身功能独立）
+      if (showControls) return
       if (isSeekKey && showControls) return
       if (Date.now() - controlFocusTimeRef.current < 500) return // Issue #9：重挂载空窗期不让直控触发
       // eventKeyAction 即原生 KeyEvent.getAction()：0=DOWN, 1=UP。

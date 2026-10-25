@@ -27,6 +27,7 @@ import { getPlayQuality } from '@/core/music/utils'
 import { toast } from '@/utils/tools'
 import settingState from '@/store/setting/state'
 import TVDownloadPanel from '@/components/TV/TVDownloadPanel'
+import TVChooseDownload from '@/components/TV/TVChooseDownload'
 import { LIST_IDS } from '@/config/constant'
 import type { TVDetailPayload } from './types'
 import { dot, tvText } from './labels'
@@ -212,25 +213,26 @@ function TVDetail({ componentId, payload }: Props) {
     pushTVPlayerScreen(componentId)
   }
 
-  // 下载全部：把当前列表所有在线歌加入下载队列（音质取播放音质设置，
-  // 单曲下载在播放页，可自选音质）。本地歌（已下载/本地歌单）跳过。
   const [showDownloadPanel, setShowDownloadPanel] = useState(false)
-  const handleDownloadAll = () => {
-    // userlist 场景的 list 是本地歌单快照（可能含本地歌），按源过滤；在线列表本就是在线歌
-    const onlineList = list.filter(m => (m as LX.Music.MusicInfo).source != 'local')
-    if (!onlineList.length) {
-      toast(tvText.downloadAddedNone)
-      return
-    }
+  const [showChooseDownload, setShowChooseDownload] = useState(false)
+  // 选择下载：弹面板勾选若干首 + 选音质后批量入队（不再「下载全部」）
+  const handleChooseDownloadConfirm = (selectedList: LX.Music.MusicInfoOnline[], quality: string) => {
     let added = 0
-    for (const musicInfo of onlineList) {
-      const quality = getPlayQuality(settingState.setting['player.playQuality'], musicInfo)
-      if (!musicInfo.meta._qualitys[quality]) continue
-      void addDownloadTask(musicInfo, quality)
+    for (const musicInfo of selectedList) {
+      // 个别歌没有所选音质、或整条信息根本没带音质字段（用户自定义音源/旧歌单）时，
+      // 不要静默跳过：退回默认音质去试，拿不到地址由下载模块标记失败并提示。
+      const qualitys = musicInfo.meta._qualitys
+      const target = qualitys?.[quality]
+        ? quality as LX.Quality
+        : qualitys
+          ? getPlayQuality(settingState.setting['player.playQuality'], musicInfo)
+          : '128k'
+      void addDownloadTask(musicInfo, target)
       added++
     }
     if (added) toast(tvText.downloadAddedAll.replace('{total}', String(added)))
     else toast(tvText.downloadAddedNone)
+    setShowChooseDownload(false)
   }
 
   // 长按删除歌曲（仅自建歌单，老板 09-20 需求）：弹窗确认后从歌单移除。
@@ -303,10 +305,10 @@ function TVDetail({ componentId, payload }: Props) {
               />
               <TVButton
                 ref={downloadAllFocus.ref as any}
-                label={tvText.downloadAll}
+                label={tvText.selectDownload}
                 tone="dark"
                 style={styles.actionButton}
-                onPress={handleDownloadAll}
+                onPress={() => { setShowChooseDownload(true) }}
                 onFocus={handleActionFocus}
                 onBlur={handleActionBlur}
                 nextFocusUp={getActiveTabHandle() ?? undefined}
@@ -433,6 +435,9 @@ function TVDetail({ componentId, payload }: Props) {
         onDismiss={() => { setLocalDialog(null) }}
       />
       <TVDownloadPanel visible={showDownloadPanel} onClose={() => { setShowDownloadPanel(false) }} />
+      {showChooseDownload && (
+        <TVChooseDownload list={list} onClose={() => { setShowChooseDownload(false) }} onConfirm={handleChooseDownloadConfirm} />
+      )}
     </TVAppleScaffold>
   )
 }
@@ -464,7 +469,7 @@ const styles: Record<string, ViewStyle | TextStyle | ImageStyle | any> = {
   kicker: { flexShrink: 1 },
   title: { marginTop: tvSize(14), lineHeight: tvFont(42), fontSize: tvFont(36) },
   desc: { marginTop: tvSize(12), lineHeight: tvFont(22), color: tvColors.subtext },
-  actions: { flexDirection: 'row', gap: tvSize(12), marginTop: tvSize(20) },
+  actions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-start', flexWrap: 'nowrap', gap: tvSize(12), marginTop: tvSize(20) },
   actionButton: { minWidth: tvSize(118), minHeight: tvSize(50), paddingHorizontal: tvSize(18), paddingVertical: tvSize(12) },
   backButton: { minWidth: tvSize(88), minHeight: tvSize(50), paddingHorizontal: tvSize(18), paddingVertical: tvSize(12) },
   // 只用一条竖向细线分隔两栏，不再用整块玻璃面板框住列表

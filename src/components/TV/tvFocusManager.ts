@@ -189,7 +189,32 @@ const getSameBandCandidates = (from: FocusRect, candidates: Array<{ target: Focu
   return inBand.length ? inBand : candidates
 }
 
+/**
+ * 覆盖层（文件浏览器 / 下载面板 / 音质选择）钉住的作用域。
+ *
+ * 为什么需要它：屏幕级 TVRemoteFocusController 会在 componentDidAppear 时调用
+ * setActiveTVFocusScope(componentId)。从系统权限弹窗或其它 Activity 回到前台时，
+ * RNN 会再发一次 appear —— 此时覆盖层还开着，作用域却被抢回背景页面。
+ * 结果就是覆盖层自己的按键回调仍在跑，但 moveTVFocus/pressActiveTVTarget 作用在背景
+ * 目标上：遥控器方向键没反应、OK 键点到了背后的 tab（用户看到的就是「弹窗里点不了按钮」）。
+ * 覆盖层打开期间把作用域钉住，期间来自屏幕的切换请求一律忽略。
+ */
+let pinnedScopeId: string | null = null
+
+/** 覆盖层打开：钉住作用域，直到 unpinTVFocusScope */
+export const pinTVFocusScope = (scopeId: string) => {
+  pinnedScopeId = scopeId
+  setActiveTVFocusScope(scopeId)
+}
+
+/** 覆盖层关闭：解除钉住（之后由调用方恢复原作用域） */
+export const unpinTVFocusScope = () => {
+  pinnedScopeId = null
+}
+
 export const setActiveTVFocusScope = (scopeId: string) => {
+  // 覆盖层打开期间，屏幕级控制器的切换请求不能生效（见 pinnedScopeId 注释）
+  if (pinnedScopeId && scopeId !== pinnedScopeId) return
   if (activeScopeId !== scopeId) {
     clearActiveTarget()
     activeScopeId = scopeId
@@ -205,6 +230,9 @@ export const clearActiveTVFocusScope = (scopeId: string) => {
 }
 
 export const isActiveTVFocusScope = (scopeId: string) => activeScopeId === scopeId
+
+/** 当前焦点作用域。覆盖层打开前先记下，关闭时恢复，避免页面级控制器一直忽略按键 */
+export const getActiveTVFocusScope = () => activeScopeId
 
 export const registerTVFocusTarget = (scopeId: string, ref: FocusTargetRef | null, preferred: boolean, onPress?: () => void) => {
   const id = nextTargetId++

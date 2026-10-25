@@ -19,6 +19,7 @@ import {
 import { Provider } from '@/store/Provider'
 import TVShell from '@/screens/TV/Shell'
 import TVRemoteFocusController from '@/components/TV/TVRemoteFocusController'
+import { TVPushedScreenMarker } from '@/components/TV/tvTabHost'
 import { TVFocusScopeContext } from '@/components/TV/tvFocusManager'
 
 import {
@@ -43,12 +44,15 @@ import VersionModal from './components/VersionModal'
 import PactModal from './components/PactModal'
 import SyncModeModal from './components/SyncModeModal'
 
-function WrappedComponent(Component: any) {
+// pushed：该屏是否可能被 push 到 tab 宿主（Shell）之上。
+// 是的话挂一个标记，让宿主和首页的返回键处理让路（见 tvTabHost 的 push 屏计数）
+function WrappedComponent(Component: any, pushed = false) {
   return function inject(props: Record<string, any>) {
     const componentId = String(props.componentId ?? 'tv-root')
     const EnhancedComponent = () => (
       <Provider>
         <TVFocusScopeContext.Provider value={componentId}>
+          {pushed ? <TVPushedScreenMarker /> : null}
           <TVRemoteFocusController componentId={componentId} />
           <Component
             {...props}
@@ -72,14 +76,14 @@ export default () => {
   // 顶部导航的六个 tab 共用一个原生 screen（见 TV/Shell.tsx）：
   // 切 tab 不再 popToRoot + push 重建整页，避免切页卡顿和首帧空底色的「黑一下」
   Navigation.registerComponent(TV_HOME_SCREEN, () => WrappedComponent(TVShell))
-  Navigation.registerComponent(TV_PLAYER_SCREEN, () => WrappedComponent(TVPlayer))
-  Navigation.registerComponent(TV_SEARCH_SCREEN, () => WrappedComponent(TVSearch))
-  Navigation.registerComponent(TV_QUEUE_SCREEN, () => WrappedComponent(TVQueue))
-  Navigation.registerComponent(TV_HISTORY_SCREEN, () => WrappedComponent(TVHistory))
-  Navigation.registerComponent(TV_SETTINGS_SCREEN, () => WrappedComponent(TVSettings))
-  Navigation.registerComponent(TV_DETAIL_SCREEN, () => WrappedComponent(TVDetail))
-  Navigation.registerComponent(TV_MYLIST_SCREEN, () => WrappedComponent(TVMyList))
-  Navigation.registerComponent(TV_RENAME_SCREEN, () => WrappedComponent(TVRename))
+  Navigation.registerComponent(TV_PLAYER_SCREEN, () => WrappedComponent(TVPlayer, true))
+  Navigation.registerComponent(TV_SEARCH_SCREEN, () => WrappedComponent(TVSearch, true))
+  Navigation.registerComponent(TV_QUEUE_SCREEN, () => WrappedComponent(TVQueue, true))
+  Navigation.registerComponent(TV_HISTORY_SCREEN, () => WrappedComponent(TVHistory, true))
+  Navigation.registerComponent(TV_SETTINGS_SCREEN, () => WrappedComponent(TVSettings, true))
+  Navigation.registerComponent(TV_DETAIL_SCREEN, () => WrappedComponent(TVDetail, true))
+  Navigation.registerComponent(TV_MYLIST_SCREEN, () => WrappedComponent(TVMyList, true))
+  Navigation.registerComponent(TV_RENAME_SCREEN, () => WrappedComponent(TVRename, true))
 
   console.info('All screens have been registered...')
 }

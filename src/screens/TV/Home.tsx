@@ -17,10 +17,11 @@ import songlistState, { type ListInfoItem } from '@/store/songlist/state'
 import { useBackHandler } from '@/utils/hooks/useBackHandler'
 import { useTVRemoteActions } from '@/utils/hooks/useTVRemoteActions'
 import { exitApp } from '@/utils/tools'
-import { showTVDialog } from '@/components/TV/TVDialog'
+import TVDialog from '@/components/TV/TVDialog'
 import { useTVFocusRef } from '@/components/TV/useTVFocusRef'
 import { useTVFocusRefresh } from '@/components/TV/useTVFocusRefresh'
 import { useNavigationComponentDidAppear } from '@/navigation/hooks'
+import { getTVTabHostActiveId, getTVTabHostFor, hasTVPushedScreen } from '@/components/TV/tvTabHost'
 import { pushTVDetailScreen, pushTVPlayerScreen, pushTVSearchScreen } from '@/navigation/navigation'
 import { createTVTabs, getSourceName } from './utils'
 import { dot, tvText } from './labels'
@@ -33,6 +34,7 @@ function TVHome({ componentId }: { componentId: string }) {
   const musicInfo = usePlayerMusicInfo()
   const isPlay = useIsPlay()
   const [songlists, setSonglists] = useState<ListInfoItem[]>([])
+  const [exitConfirmVisible, setExitConfirmVisible] = useState(false)
   const playFocus = useTVFocusRef()
   const searchFocus = useTVFocusRef()
   const firstCardFocus = useTVFocusRef()
@@ -52,18 +54,25 @@ function TVHome({ componentId }: { componentId: string }) {
   useEffect(() => () => {
     if (appearTimerRef.current) clearTimeout(appearTimerRef.current)
   }, [])
-  // 首页返回键：先弹退出确认，避免遥控器误触直接退出应用
-  useBackHandler(() => {
-    showTVDialog({
-      title: tvText.exitConfirmTitle,
-      message: tvText.exitConfirmMessage,
-      buttons: [
-        { label: tvText.cancelAction, tone: 'dark' },
-        { label: tvText.exitApp, tone: 'primary', onPress: () => { exitApp() } },
-      ],
-    })
+  // 首页返回键：先弹退出确认，避免遥控器误触直接退出应用。
+  // 用本地 TVDialog（不走全局 showTVDialog）：Shell 内多 tab 页常驻、各自挂了 TVDialogHost，
+  // 全局注册表的 activeListener 会指向最后预挂载的页，导致首页的确认框渲染到不可见页而不显示。
+  //
+  // 必须严格限定「首页自己当前可见」才处理，否则会吞掉别人的返回键：
+  // - 有 push 屏（播放页/详情页）盖在上面时让路，否则 push 屏关不掉；
+  // - 当前在别的 tab 时让路，交给那个 tab 的 useTVNavigationBack 切回首页。
+  // 以前不管在哪都弹确认框，而确认框渲染在不可见的首页里 —— 用户看到的就是
+  // 「返回键和方向键全都没反应」（弹窗激活后焦点控制器整个让路）。
+  // 回调必须稳定（useCallback）：内联箭头函数会让这个监听在每次渲染后重新注册，
+  // 永远排在 BackHandler 分发的第一位，把其它页的返回键全抢走。
+  const handleHomeBack = useCallback(() => {
+    if (hasTVPushedScreen()) return false
+    if (!getTVTabHostFor(componentId)) return false
+    if (getTVTabHostActiveId() !== 'home') return false
+    setExitConfirmVisible(true)
     return true
-  })
+  }, [componentId])
+  useBackHandler(handleHomeBack)
 
   useTVRemoteActions({
     playPause: () => {
@@ -219,6 +228,15 @@ function TVHome({ componentId }: { componentId: string }) {
           </TVShelf>
         </View>
       </ScrollView>
+      <TVDialog
+        visible={exitConfirmVisible}
+        title={tvText.exitConfirmTitle}
+        message={tvText.exitConfirmMessage}
+        buttons={[
+          { label: tvText.cancelAction, tone: 'dark', onPress: () => { setExitConfirmVisible(false) } },
+          { label: tvText.exitApp, tone: 'primary', onPress: () => { setExitConfirmVisible(false); exitApp() } },
+        ]}
+      />
     </TVAppleScaffold>
   )
 }

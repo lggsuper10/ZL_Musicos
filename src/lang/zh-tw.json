@@ -224,6 +224,8 @@
   "download_added_tip": "已加入下載清單",
   "download_completed_tip": "《{name}》下載完成，已新增至「本機歌曲」歌單",
   "download_task_exist_tip": "該歌曲已在下載清單中",
+  "download_storage_permission_denied": "沒有儲存權限，無法儲存歌曲檔案。請在系統設定中允許洛雪存取儲存空間後重試",
+  "download_prepare_failed": "下載失敗：無法取得歌曲位址或建立儲存目錄",
   "download_status_run": "下載中",
   "download_status_waiting": "等待中",
   "download_status_pause": "已暫停",

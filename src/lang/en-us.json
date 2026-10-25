@@ -224,6 +224,8 @@
   "download_added_tip": "Added to download list",
   "download_completed_tip": "\"{name}\" downloaded and added to the \"Local Songs\" list",
   "download_task_exist_tip": "This song is already in the download list",
+  "download_storage_permission_denied": "No storage permission, cannot save the song file. Please allow storage access for LX Music in system settings and try again",
+  "download_prepare_failed": "Download failed: could not get the song URL or create the save folder",
   "download_status_run": "Downloading",
   "download_status_waiting": "Waiting",
   "download_status_pause": "Paused",

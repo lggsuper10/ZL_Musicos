@@ -13,6 +13,11 @@ export type {
   FileType,
 } from 'react-native-file-system'
 
+// 转出 FileSystem：下载模块要对 SAF 目录做 mkdir/ls/cp，
+// 之前从本模块以具名方式导入它，而这里并没有导出 —— 运行时拿到的是 undefined，
+// 一旦用户把下载目录设成 SAF 授权目录就会 "Cannot read property 'mkdir' of undefined"。
+export { FileSystem } from 'react-native-file-system'
+
 // export const externalDirectoryPath = RNFS.ExternalDirectoryPath
 
 export const extname = (name: string) => name.lastIndexOf('.') > 0 ? name.substring(name.lastIndexOf('.') + 1) : ''

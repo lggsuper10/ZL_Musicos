@@ -69,7 +69,13 @@ interface Props {
   onActiveTabReady?: () => void
 }
 
-const TabButton = forwardRef<any, ComponentProps<typeof Focusable> & { item: TVTabItem, current: boolean }>(({ item, current, ...props }, ref) => {
+type TabButtonProps = ComponentProps<typeof Focusable> & {
+  item: TVTabItem
+  current: boolean
+  /** 防抖版 activate：连续左右切 tab 时只在最后停留的 tab 触发一次切页 */
+  scheduleActivate?: (fn: () => void) => void
+}
+const TabButton = forwardRef<any, TabButtonProps>(({ item, current, scheduleActivate, ...props }, ref) => {
   const inHost = useContext(TVTabHostContext)
   const activate = () => {
     if (current || item.noop === true) return
@@ -81,15 +87,17 @@ const TabButton = forwardRef<any, ComponentProps<typeof Focusable> & { item: TVT
   return (
     <Focusable
       ref={ref}
-      style={styles.tab}
+      style={[styles.tab, current && styles.tabActive]}
       focusStyle={styles.tabFocus}
       onPress={activate}
       // 焦点落到哪个 tab 就直接切到哪个页面（老板需求 09-22），不用再按 OK 确认。
       // current 的 tab 不切：详情页内容按上键会回到「当前 tab」，若也切就会原地重开一页
-      onTVFocusChange={focused => { if (focused) activate() }}
+      // 用防抖合并连续左右移动：快速滑过多个 tab 时只切最终停留的那个，避免每次焦点
+      // 移动都触发一次全局切页广播（所有 Focusable 重算焦点目标 + Shell 重渲染）而卡顿。
+      onTVFocusChange={focused => { if (focused) scheduleActivate?.(activate) }}
       {...props}
     >
-      <TVText variant="body" style={styles.tabText}>{item.label}</TVText>
+      <TVText variant="body" style={[styles.tabText, current && styles.tabTextActive]}>{item.label}</TVText>
     </Focusable>
   )
 })
@@ -97,6 +105,14 @@ const TabButton = forwardRef<any, ComponentProps<typeof Focusable> & { item: TVT
 type TabNode = ComponentRef<typeof Focusable> | null
 
 const TVTopTabs = ({ items, activeId, subtitle, hasTVPreferredFocus, nextFocusDown, activeTabRef, onActiveTabReady }: Props) => {
+  // 连续左右切 tab 时合并切页：只切最后停留的那个，避免每次焦点移动都触发
+  // 一次全局切页广播（所有 Focusable 重算焦点目标 + Shell 重渲染）而卡顿
+  const activateTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const scheduleActivate = useCallback((fn: () => void) => {
+    if (activateTimer.current) clearTimeout(activateTimer.current)
+    activateTimer.current = setTimeout(fn, 90)
+  }, [])
+  useEffect(() => () => { if (activateTimer.current) clearTimeout(activateTimer.current) }, [])
   const tabRefs = useRef<Record<string, TabNode>>({})
   // 已通知过 onActiveTabReady 的节点，用于去重。
   // 下面的 ref 是内联函数，React 每次提交都会先以 null、再以节点调用它；
@@ -206,6 +222,7 @@ const TVTopTabs = ({ items, activeId, subtitle, hasTVPreferredFocus, nextFocusDo
             }}
             item={item}
             current={item.id === activeId}
+            scheduleActivate={scheduleActivate}
             hasTVPreferredFocus={hasTVPreferredFocus && index === activeIndex}
             nextFocusLeft={getHandle(index - 1) ?? undefined}
             nextFocusRight={getHandle(index + 1) ?? undefined}
@@ -254,6 +271,14 @@ const styles: Record<string, ViewStyle | TextStyle> = {
     color: tvColors.subtext,
     fontSize: tvTokens.nav,
     fontWeight: '700',
+  },
+  // 当前选中的 tab：即使焦点已移到内容区也始终高亮，让用户一眼看清所在栏目
+  tabActive: {
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
+  tabTextActive: {
+    color: tvColors.primaryHigh,
+    fontWeight: '800',
   },
 }
 
