@@ -1,4 +1,4 @@
-import { forwardRef, memo, type ComponentProps } from 'react'
+import { forwardRef, memo, type ComponentProps, type ReactNode } from 'react'
 import { Text, type TextStyle, type ViewStyle } from 'react-native'
 import Focusable from './Focusable'
 import { Icon } from '@/components/common/Icon'
@@ -7,6 +7,8 @@ import { tvColors } from '@/theme/tv'
 interface Props extends Omit<ComponentProps<typeof Focusable>, 'children'> {
   label: string
   iconName?: ComponentProps<typeof Icon>['name']
+  /** 图标字体里没有的自绘图标（如图钉），优先于 iconName/label */
+  iconNode?: ReactNode
   primary?: boolean
   size?: number
   style?: ViewStyle | ViewStyle[]
@@ -14,7 +16,7 @@ interface Props extends Omit<ComponentProps<typeof Focusable>, 'children'> {
   iconStyle?: TextStyle | TextStyle[]
 }
 
-const TVRoundControl = forwardRef<any, Props>(({ label, iconName, primary, size = 64, style, textStyle, iconStyle, ...props }, ref) => (
+const TVRoundControl = forwardRef<any, Props>(({ label, iconName, iconNode, primary, size = 64, style, textStyle, iconStyle, ...props }, ref) => (
   <Focusable
     ref={ref}
     style={[
@@ -26,7 +28,7 @@ const TVRoundControl = forwardRef<any, Props>(({ label, iconName, primary, size 
     focusStyle={primary ? styles.primaryFocus : styles.focus}
     {...props}
   >
-    {iconName
+    {iconNode ?? (iconName
       ? (
           <Icon
             name={iconName}
@@ -53,7 +55,7 @@ const TVRoundControl = forwardRef<any, Props>(({ label, iconName, primary, size 
           >
             {label}
           </Text>
-        )}
+        ))}
   </Focusable>
 ))
 
@@ -73,18 +75,18 @@ const styles: Record<string, ViewStyle | TextStyle> = {
   },
   focus: {
     backgroundColor: 'rgba(255,255,255,0.30)',
-    borderColor: tvColors.primaryHigh,
+    borderColor: tvColors.focus,
     borderWidth: 3,
-    shadowColor: tvColors.primaryHigh,
+    shadowColor: tvColors.focus,
     shadowOpacity: 0.95,
     shadowRadius: 10,
     elevation: 8,
   },
   primaryFocus: {
     backgroundColor: '#ffffff',
-    borderColor: tvColors.primaryHigh,
+    borderColor: tvColors.focus,
     borderWidth: 3,
-    shadowColor: tvColors.primaryHigh,
+    shadowColor: tvColors.focus,
     shadowOpacity: 0.95,
     shadowRadius: 10,
     elevation: 8,

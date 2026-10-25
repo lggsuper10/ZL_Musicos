@@ -158,6 +158,8 @@ function TVHistory({ componentId }: { componentId: string }) {
                 key={tab.id}
                 ref={bindSourceRef(tab.id) as any}
                 style={[styles.sourceTab, sourceSel === tab.id && styles.sourceTabActive]}
+                // 与顶栏 tab 一致：选中项用绿底，焦点亮一档，不再叠白边
+                focusStyle={sourceSel === tab.id ? styles.sourceTabActiveFocus : undefined}
                 onPress={() => { handleSourceChange(tab.id) }}
                 nextFocusLeft={getSourceHandle(sourceTabs[index - 1]?.id) ?? undefined}
                 nextFocusRight={getSourceHandle(sourceTabs[index + 1]?.id) ?? undefined}
@@ -245,10 +247,11 @@ const styles: Record<string, ViewStyle | TextStyle | any> = {
   title: { fontSize: tvFont(48), lineHeight: tvFont(56), flexShrink: 0 },
   sourceTabWrap: { flex: 1, maxWidth: tvSize(640) },
   sourceTabContent: { flexDirection: 'row', gap: tvSize(8), alignItems: 'center', minHeight: tvSize(40), paddingRight: tvSize(8) },
-  sourceTab: { minHeight: tvSize(30), borderRadius: 999, paddingHorizontal: tvSize(14), alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: tvColors.border },
-  sourceTabActive: { backgroundColor: 'rgba(0,103,192,0.25)', borderColor: tvColors.primary },
+  sourceTab: { minHeight: tvSize(30), borderRadius: tvSize(10), paddingHorizontal: tvSize(14), alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: tvColors.border },
+  sourceTabActive: { backgroundColor: tvColors.selectGreen, borderColor: tvColors.selectGreen },
+  sourceTabActiveFocus: { backgroundColor: tvColors.selectGreenFocus, borderColor: tvColors.selectGreenFocus, shadowColor: tvColors.selectGreen },
   sourceTabText: { color: tvColors.subtext },
-  sourceTabTextActive: { color: tvColors.text, fontWeight: '700' },
+  sourceTabTextActive: { color: tvColors.bgDeep, fontWeight: '800' },
   body: { flex: 1, minHeight: 0, flexDirection: 'row', gap: tvSize(28), overflow: 'hidden' },
   // FlatList 必须显式 flex:1 + 外层 overflow:hidden，否则短屏上列表按内容高度撑开，
   // 会盖住页脚、最后一两行被屏幕边缘裁掉
@@ -259,7 +262,7 @@ const styles: Record<string, ViewStyle | TextStyle | any> = {
   empty: { marginTop: tvSize(24) },
   row: { minHeight: tvSize(58), marginBottom: tvSize(8), paddingHorizontal: tvSize(16), borderRadius: tvSize(16), flexDirection: 'row', alignItems: 'center', gap: tvSize(14), borderWidth: 2, borderColor: 'transparent' },
   rowActive: { backgroundColor: 'rgba(255,255,255,0.06)' },
-  rowFocus: { backgroundColor: 'rgba(255,255,255,0.16)', borderColor: tvColors.primaryHigh },
+  rowFocus: { backgroundColor: 'rgba(255,255,255,0.16)', borderColor: tvColors.focus },
   rowIndex: { width: tvSize(40), fontSize: tvFont(18), fontWeight: '900', color: tvColors.dimText, textAlign: 'right' },
   rowIndexTop: { color: tvColors.primaryHigh },
   rowName: { flex: 1, fontSize: tvFont(22), fontWeight: '700', color: tvColors.text },

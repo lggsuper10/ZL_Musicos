@@ -402,6 +402,9 @@ function TVQueue({ componentId }: { componentId: string }) {
                     onLongPress={() => { handleRemoveMusic(item, index) }}
                     nextFocusUp={index === 0 ? playModeFocus.getNodeHandle() ?? undefined : getQueueHandle(prevKey) ?? undefined}
                     nextFocusDown={getQueueHandle(nextKey) ?? undefined}
+                    // 左右键在本界面切换模块：列表 ↔ 顶部按钮模块（遥控器左右移动直接跳到按钮）
+                    nextFocusLeft={playModeFocus.getNodeHandle() ?? undefined}
+                    nextFocusRight={playModeFocus.getNodeHandle() ?? undefined}
                   />
                 )
               }}

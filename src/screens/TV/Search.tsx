@@ -7,7 +7,7 @@ import TVButton from '@/components/TV/TVButton'
 import TVMusicRow from '@/components/TV/TVMusicRow'
 import TVSearchKeyboard from '@/components/TV/TVSearchKeyboard'
 import Focusable from '@/components/TV/Focusable'
-import { tvColors, tvFont, tvSize } from '@/theme/tv'
+import { tvColors, tvFont, tvSize, tvTokens } from '@/theme/tv'
 import { search } from '@/core/search/music'
 import { matchHotSearch, matchExactPinyin, type HotSearchItem } from '@/config/hotSongs'
 import searchMusicState from '@/store/search/music/state'
@@ -324,6 +324,8 @@ function TVSearch({ componentId }: { componentId: string }) {
                 key={tab.id}
                 ref={bindSourceRef(tab.id) as any}
                 style={[styles.sourceTab, source === tab.id && styles.sourceTabActive]}
+                // 与顶栏 tab 一致：选中项用绿底，焦点亮一档，不再叠白边
+                focusStyle={source === tab.id ? styles.sourceTabActiveFocus : undefined}
                 onPress={() => { handleSourceChange(tab.id) }}
                 nextFocusLeft={getSourceHandle(sourceTabs[index - 1]?.id) ?? searchButtonHandle}
                 nextFocusRight={getSourceHandle(sourceTabs[index + 1]?.id) ?? undefined}
@@ -381,8 +383,8 @@ const styles: Record<string, ViewStyle | TextStyle | any> = {
   blockTitle: { marginTop: tvSize(12), fontSize: tvFont(20) },
   hotWrap: { marginTop: tvSize(8), marginBottom: tvSize(12), minHeight: tvSize(40), flexGrow: 0 },
   hotContent: { flexDirection: 'row', gap: tvSize(8), alignItems: 'center', minHeight: tvSize(40), paddingRight: tvSize(8) },
-  hotItem: { minHeight: tvSize(32), borderRadius: 999, paddingHorizontal: tvSize(13), alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.10)', borderWidth: 1, borderColor: tvColors.border },
-  suggestItem: { backgroundColor: 'rgba(122,162,247,0.16)', borderColor: tvColors.primaryHigh },
+  hotItem: { minHeight: tvSize(32), borderRadius: tvTokens.radiusBtn, paddingHorizontal: tvSize(13), alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.10)', borderWidth: 1, borderColor: tvColors.border },
+  suggestItem: { backgroundColor: 'rgba(122,162,247,0.16)', borderColor: tvColors.focus },
   resultHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginTop: tvSize(8), marginBottom: tvSize(12), minHeight: tvSize(44) },
   resultContent: { paddingBottom: tvSize(20) },
   footer: { alignItems: 'center', paddingVertical: tvSize(18) },
@@ -390,10 +392,11 @@ const styles: Record<string, ViewStyle | TextStyle | any> = {
   error: { marginBottom: tvSize(12) },
   sourceTabWrap: { marginBottom: tvSize(14), flexGrow: 0 },
   sourceTabContent: { flexDirection: 'row', gap: tvSize(8), alignItems: 'center', minHeight: tvSize(40), paddingRight: tvSize(8) },
-  sourceTab: { minHeight: tvSize(30), borderRadius: 999, paddingHorizontal: tvSize(14), alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: tvColors.border },
-  sourceTabActive: { backgroundColor: 'rgba(0,103,192,0.25)', borderColor: tvColors.primary },
+  sourceTab: { minHeight: tvSize(30), borderRadius: tvSize(10), paddingHorizontal: tvSize(14), alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: tvColors.border },
+  sourceTabActive: { backgroundColor: tvColors.selectGreen, borderColor: tvColors.selectGreen },
+  sourceTabActiveFocus: { backgroundColor: tvColors.selectGreenFocus, borderColor: tvColors.selectGreenFocus, shadowColor: tvColors.selectGreen },
   sourceTabText: { color: tvColors.subtext },
-  sourceTabTextActive: { color: tvColors.text, fontWeight: '700' },
+  sourceTabTextActive: { color: tvColors.bgDeep, fontWeight: '800' },
 }
 
 export default memo(TVSearch)

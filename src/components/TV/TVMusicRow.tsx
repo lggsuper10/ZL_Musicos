@@ -113,8 +113,8 @@ const styles: Record<string, ViewStyle | any> = {
   },
   focus: {
     backgroundColor: tvColors.glassHigh,
-    borderColor: tvColors.primaryHigh,
-    shadowColor: tvColors.primaryHigh,
+    borderColor: tvColors.focus,
+    shadowColor: tvColors.focus,
     shadowOpacity: 0.4,
     shadowRadius: tvSize(12),
     shadowOffset: { width: 0, height: tvSize(3) },

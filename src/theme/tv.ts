@@ -51,11 +51,17 @@ export const tvColors = {
   dimText: '#7d8493',
   primary: '#8aadff',
   primaryHigh: '#d8e6ff',
+  // 遥控器焦点边框色：各 TV 模块获焦时用绿色描边，方便一眼识别焦点位置（老板 10-25 需求）
+  focus: '#0BD874',
   primarySoft: 'rgba(138,173,255,0.20)',
   blue: '#6ea8ff',
   purple: '#b8a6ff',
   orange: '#f1c36d',
   green: '#77d9a8',
+  // 微信式选中绿：顶栏 tab、来源切换、下载音质等文字按钮的选中态（老板 10-25 需求）
+  selectGreen: '#07C160',
+  // 选中项带焦点时用同色系亮一档表示焦点，不再用白边压绿底
+  selectGreenFocus: '#0BD874',
   danger: '#ff6b6b',
   warn: '#f1c36d',
   muted: '#646b78',
@@ -71,6 +77,8 @@ export const tvTokens = {
   radiusLg: tvSize(30),
   radiusXl: tvSize(38),
   radiusPill: 999,
+  // 按钮/可选中项统一小圆角：和顶栏选中 tab 完全一致（胶囊形弧度过大，与电视方块卡片不搭）
+  radiusBtn: tvSize(10),
   gap: tvSize(22),
   cardPad: tvSize(22),
   pagePadX: tvSize(68),

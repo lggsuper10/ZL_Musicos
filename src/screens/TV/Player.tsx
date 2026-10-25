@@ -8,6 +8,7 @@ import TVRoundControl from '@/components/TV/TVRoundControl'
 import Focusable from '@/components/TV/Focusable'
 import TVNowPlayingDock from '@/components/TV/TVNowPlayingDock'
 import TVVinylRecord from '@/components/TV/TVVinylRecord'
+import TVPinIcon from '@/components/TV/TVPinIcon'
 import TVFadeOverlay from '@/components/TV/TVFadeOverlay'
 import { getTVLayoutMetrics, tvColors, tvSize } from '@/theme/tv'
 import { useIsPlay, usePlayerMusicInfo, useProgress } from '@/store/player/hook'
@@ -31,9 +32,6 @@ import { useLrcPlay, useLrcSet } from '@/plugins/lyric'
 import { MUSIC_TOGGLE_MODE, MUSIC_TOGGLE_MODE_LIST } from '@/config/constant'
 import { tvText } from './labels'
 import { getPlayModeName, getSourceName } from './utils'
-
-// TEMP: 仅用于真机验证黑胶动画，验证后删除
-const FORCE_VINYL_FOR_CHECK = true
 
 const lyricMetaPattern = /^(作词|作曲|编曲|制作|制作人|制作统筹|制片人|监制|出品|出品人|发行|营销|推广|视频推广|推广策划|录音|混音|母带|和声|和音|音讯编辑|乐队总监|键盘手|PGM|弦乐|录音室|录音|混音|母带|吉他|贝斯|鼓|词|曲|OP|SP|ISRC|企划|统筹|鸣谢|版权|未经|未经许可|未经著作权人|封面设计|封面|设计|视觉|摄影|海报|文案|Cover|Cover Design|Artwork|Art Design|Design|Visual|Photography|Lyricist|Composer|Arranger|Producer|Mixing|Mastering).*[:：]?/i
 const lyricCopyrightPattern = /(未经|著作权人|许可|翻唱|翻录|使用|版权|Cover Design|Artwork|Art Design)/i
@@ -129,7 +127,9 @@ function TVPlayer({ componentId }: { componentId: string }) {
       // 以前这里直接拦死并提示「暂无可下载音质」，但播放本身就会按默认音质去取地址，
       // 下载同样可以先试一发 —— 真拿不到 URL 时下载模块会提示「下载准备失败」。
       // _qualitys 整个字段缺失时 getPlayQuality 会直接读 undefined，这里兜底 128k
-      const fallback = onlineMusicInfo.meta._qualitys
+      // meta 本身也可能缺失（自定义音源/聚合源常见），必须用可选链，否则在
+      // 「meta 缺失 → 走兜底」这条路上自己就先崩了（Fatal: TypeError _qualitys of undefined）
+      const fallback = onlineMusicInfo.meta?._qualitys
         ? getPlayQuality(settingState.setting['player.playQuality'], onlineMusicInfo)
         : '128k'
       void addDownloadTask(onlineMusicInfo, fallback)
@@ -176,8 +176,16 @@ function TVPlayer({ componentId }: { componentId: string }) {
   // onLoad 之后才切回方形封面。状态按 url 记录，换歌首帧就能判断，
   // 不用等 effect 复位，避免旧封面闪一下。
   const coverUrl = musicInfo.pic ?? null
+  // 当前歌曲是否本地歌：本地歌没有「下载」概念，控制栏不显示下载按钮
+  const isLocalMusic = (() => {
+    const raw = (musicInfo && 'progress' in musicInfo
+      ? (musicInfo as unknown as LX.Download.ListItem).metadata.musicInfo
+      : musicInfo) as LX.Music.MusicInfo | undefined
+    return raw?.source === 'local'
+  })()
+  const downloadNode = isLocalMusic ? null : downloadFocus.getNodeHandle() ?? undefined
   const [coverState, setCoverState] = useState<{ url: string | null, loaded: boolean, failed: boolean }>({ url: null, loaded: false, failed: false })
-  const coverReady = FORCE_VINYL_FOR_CHECK || (!!coverUrl && coverState.url === coverUrl && coverState.loaded && !coverState.failed)
+  const coverReady = !!coverUrl && coverState.url === coverUrl && coverState.loaded && !coverState.failed
   const coverUrlRef = useRef<string | null>(coverUrl)
   coverUrlRef.current = coverUrl
   const handleCoverLoad = useCallback(() => {
@@ -186,6 +194,19 @@ function TVPlayer({ componentId }: { componentId: string }) {
   const handleCoverError = useCallback(() => {
     setCoverState({ url: coverUrlRef.current, loaded: false, failed: true })
   }, [])
+  // 黑胶↔海报交叉淡入：海报 onLoad 后黑胶不再瞬间卸掉（那样会「原地跳走」），
+  // 而是沿中心旋着淡出消失，同时海报淡入——转场更顺。
+  const vinylOpacity = useRef(new Animated.Value(1)).current
+  const posterOpacity = useRef(new Animated.Value(0)).current
+  useEffect(() => {
+    if (coverReady) {
+      Animated.timing(vinylOpacity, { toValue: 0, duration: 380, useNativeDriver: true }).start()
+      Animated.timing(posterOpacity, { toValue: 1, duration: 380, useNativeDriver: true }).start()
+    } else {
+      vinylOpacity.setValue(1)
+      posterOpacity.setValue(0)
+    }
+  }, [coverReady, vinylOpacity, posterOpacity])
   const prevColorRef = useRef<string | null>(null)
   useEffect(() => {
     if (!dominant) return
@@ -689,21 +710,28 @@ function TVPlayer({ componentId }: { componentId: string }) {
           <View style={[styles.albumColumn, appleLayout.albumColumn]}>
             <View style={[styles.coverStage, appleLayout.coverStage]}>
               <View style={[styles.coverGlow, appleLayout.coverGlow]} />
-              {!coverReady ? <TVVinylRecord isPlaying={showAsPlaying && !!musicInfo.id} size={appleLayout.coverStage.width} style={styles.coverVinyl} /> : null}
+              <Animated.View style={[styles.coverVinyl, { opacity: vinylOpacity, pointerEvents: coverReady ? 'none' : 'auto' }]}>
+                <TVVinylRecord isPlaying={showAsPlaying && !!musicInfo.id && !coverReady} size={appleLayout.coverStage.width} />
+              </Animated.View>
               {coverUrl ? (
-                <View style={[styles.coverWrap, appleLayout.coverWrap, !coverReady && styles.coverPending]}>
+                <Animated.View style={[styles.coverWrap, appleLayout.coverWrap, { opacity: posterOpacity }, !coverReady && styles.coverPending]}>
                   <View style={[styles.cover, appleLayout.cover]}>
                     <Image url={coverUrl} resizeMode="cover" style={styles.coverImage as ImageStyle} onLoad={handleCoverLoad} onError={handleCoverError} />
                   </View>
-                </View>
+                </Animated.View>
               ) : null}
             </View>
             <View style={[styles.songIdentity, appleLayout.songIdentity]}>
               <TVText variant="pageTitle" style={[styles.songTitle, appleLayout.songTitle]} numberOfLines={2}>{musicInfo.name || tvText.welcome}</TVText>
+              {isLocalMusic && musicInfo.id ? (
+                <View style={styles.localBadge}>
+                  <TVText variant="caption" style={styles.localBadgeText}>{tvText.local}</TVText>
+                </View>
+              ) : null}
               <View style={[styles.metaRow, appleLayout.metaRow]}>
                 <TVText variant="body" style={[styles.songMeta, appleLayout.songMeta]} numberOfLines={1}>{musicInfo.id ? (musicInfo.singer || tvText.unknownSinger) : tvText.chooseMusicHint}</TVText>
                 {musicInfo.id ? <View style={styles.metaDot} /> : null}
-                {musicInfo.id ? <TVText variant="body" style={[styles.sourceMeta, appleLayout.sourceMeta]} numberOfLines={1}>{sourceName}</TVText> : null}
+                {musicInfo.id ? <TVText variant="body" style={[styles.sourceMeta, appleLayout.sourceMeta]} numberOfLines={1}>{isLocalMusic ? tvText.local : sourceName}</TVText> : null}
               </View>
             </View>
           </View>
@@ -775,9 +803,22 @@ function TVPlayer({ componentId }: { componentId: string }) {
               <TVRoundControl ref={modeFocus.ref as any} label={getPlayModeName(playMode)} iconName={getPlayModeIconName(playMode)} size={appleLayout.controlSmall} onPress={togglePlayMode} onFocus={handleControlFocus} onBlur={handleControlBlur} accessibilityLabel={getPlayModeName(playMode)} nextFocusRight={prevFocus.getNodeHandle() ?? undefined} />
               <TVRoundControl ref={prevFocus.ref as any} label={tvText.controlPrev} iconName="prevMusic" size={appleLayout.controlSmall} onPress={() => { revealControls(); void playPrev() }} onFocus={handleControlFocus} onBlur={handleControlBlur} accessibilityLabel={tvText.controlPrev} nextFocusLeft={modeFocus.getNodeHandle() ?? undefined} nextFocusRight={playFocus.getNodeHandle() ?? undefined} />
               <TVRoundControl ref={playFocus.ref as any} label={showAsPlaying ? tvText.pause : tvText.playNow} iconName={showAsPlaying ? 'pause' : 'play'} primary size={appleLayout.controlPrimary} onPress={handleTogglePlay} onFocus={handleControlFocus} onBlur={handleControlBlur} hasTVPreferredFocus nextFocusLeft={prevFocus.getNodeHandle() ?? undefined} nextFocusRight={nextFocus.getNodeHandle() ?? undefined} />
-              <TVRoundControl ref={nextFocus.ref as any} label={tvText.controlNext} iconName="nextMusic" size={appleLayout.controlSmall} onPress={() => { revealControls(); void playNext() }} onFocus={handleControlFocus} onBlur={handleControlBlur} accessibilityLabel={tvText.controlNext} nextFocusLeft={playFocus.getNodeHandle() ?? undefined} nextFocusRight={downloadFocus.getNodeHandle() ?? undefined} />
-              <TVRoundControl ref={downloadFocus.ref as any} label={tvText.download} iconName="download-2" size={appleLayout.controlSmall} onPress={() => { revealControls(); handleDownload() }} onFocus={handleControlFocus} onBlur={handleControlBlur} accessibilityLabel={tvText.download} nextFocusLeft={nextFocus.getNodeHandle() ?? undefined} nextFocusRight={pinFocus.getNodeHandle() ?? undefined} />
-              <TVRoundControl ref={pinFocus.ref as any} label={tvText.controlPin} iconName={undefined} primary={controlsPinned} size={appleLayout.controlSmall} onPress={toggleControlsPin} onFocus={handleControlFocus} onBlur={handleControlBlur} accessibilityLabel={tvText.controlPin} nextFocusLeft={downloadFocus.getNodeHandle() ?? undefined} />
+              <TVRoundControl ref={nextFocus.ref as any} label={tvText.controlNext} iconName="nextMusic" size={appleLayout.controlSmall} onPress={() => { revealControls(); void playNext() }} onFocus={handleControlFocus} onBlur={handleControlBlur} accessibilityLabel={tvText.controlNext} nextFocusLeft={playFocus.getNodeHandle() ?? undefined} nextFocusRight={downloadNode ?? pinFocus.getNodeHandle() ?? undefined} />
+              {!isLocalMusic ? (
+                <TVRoundControl ref={downloadFocus.ref as any} label={tvText.download} iconName="download-2" size={appleLayout.controlSmall} onPress={() => { revealControls(); handleDownload() }} onFocus={handleControlFocus} onBlur={handleControlBlur} accessibilityLabel={tvText.download} nextFocusLeft={nextFocus.getNodeHandle() ?? undefined} nextFocusRight={pinFocus.getNodeHandle() ?? undefined} />
+              ) : null}
+              <TVRoundControl
+                ref={pinFocus.ref as any}
+                label={tvText.controlPin}
+                iconNode={<TVPinIcon size={Math.round(appleLayout.controlSmall * 0.46)} color={controlsPinned ? tvColors.bgDeep : tvColors.text} />}
+                primary={controlsPinned}
+                size={appleLayout.controlSmall}
+                onPress={toggleControlsPin}
+                onFocus={handleControlFocus}
+                onBlur={handleControlBlur}
+                accessibilityLabel={tvText.controlPin}
+                nextFocusLeft={downloadNode ?? nextFocus.getNodeHandle() ?? undefined}
+              />
             </View>
             </TVNowPlayingDock>
           </View>
@@ -881,9 +922,9 @@ const styles: Record<string, ViewStyle | TextStyle | ImageStyle | any> = {
   coverStage: { justifyContent: 'center' },
   // 黑胶占满封面位；海报没加载出来时盖在上面，加载完成后卸掉
   coverVinyl: { position: 'absolute', left: 0, top: 0 },
-  // 海报仍挂在树上等 onLoad（卸载就永远不会加载完），先透明占位；
-  // 同时去掉阴影/海拔，否则安卓会在黑胶周围留一圈方形投影
-  coverPending: { opacity: 0, shadowOpacity: 0, elevation: 0 },
+  // 海报仍挂在树上等 onLoad（卸载就永远不会加载完），先透明占位（opacity 由 posterOpacity 驱动）；
+  // 这里只去掉阴影/海拔，否则安卓会在黑胶周围留一圈方形投影
+  coverPending: { shadowOpacity: 0, elevation: 0 },
   coverGlow: {
     position: 'absolute',
     width: 280,
@@ -978,6 +1019,19 @@ const styles: Record<string, ViewStyle | TextStyle | ImageStyle | any> = {
     transform: [{ scaleY: 0.5 }],
   },
   songIdentity: { alignItems: 'center' },
+  // 本地歌曲标识徽标：圆角胶囊，主题色描边+浅底，一眼能认出是本地歌
+  localBadge: {
+    marginTop: tvSize(8),
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: tvSize(11),
+    paddingVertical: tvSize(3),
+    borderRadius: 999,
+    backgroundColor: 'rgba(216,230,255,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(216,230,255,0.24)',
+  },
+  localBadgeText: { fontSize: tvSize(13), fontWeight: '800', color: tvColors.primaryHigh },
   songIdentityDimmed: { opacity: 0 },
   songTitle: { marginTop: 0, fontWeight: '800', textAlign: 'center' },
   metaRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },

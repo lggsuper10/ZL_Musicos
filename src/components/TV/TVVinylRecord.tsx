@@ -2,7 +2,6 @@ import { memo, useEffect, useRef } from 'react'
 import { Animated, Easing, View, type ImageStyle, type ViewStyle } from 'react-native'
 import Image from '@/components/common/Image'
 import { tvColors } from '@/theme/tv'
-import TVText from './TVText'
 
 interface Props {
   image?: string | number | null
@@ -12,13 +11,10 @@ interface Props {
   style?: ViewStyle | ViewStyle[]
 }
 
-// 33⅓ 转/分（黑胶唱片标准转速）。原实现 18s 才转一圈，大约是 3.3 转/分，
-// 在电视上几乎看不出在转，这也是「黑胶出来了但动画不对」的主因。
+// 33⅓ 转/分（黑胶唱片标准转速）：1.8s 一圈。
+// 匀速旋转、rotate 映射到 0→360deg，360deg 与 0deg 视觉等价，循环衔接处无
+// 跳变；暂停冻结角度、续播从原角度接着转，不会回弹——杜绝「雨刮式」顿挫。
 const SPIN_PERIOD = 1800
-// 起转 / 刹车时长。用二次缓动：加速段结束时、减速段刚开始时的角速度
-// 都恰好等于匀速段的角速度，因此换挡处不会有「一顿」。
-const SPIN_RAMP = 900
-const RAMP_TURNS = SPIN_RAMP / (2 * SPIN_PERIOD)
 
 // 唱臂绕右上角支点摆动：播放时压进唱片，暂停时摆回唱片右侧（抬起）
 const PLAY_ANGLE = '-74deg'
@@ -29,90 +25,56 @@ const GROOVE_SCALES = [0.88, 0.82, 0.76, 0.7, 0.64, 0.58, 0.52, 0.46]
 
 const TVVinylRecord = ({ image, isPlaying, size = 392, onCoverError, style }: Props) => {
   const spinValue = useRef(new Animated.Value(0)).current
-  // 累计圈数（不是 0~1 循环）。用 stopAnimation 同步到当前值后从该角度继续，
-  // 暂停/继续时唱片不会跳角度。
-  const spinPosRef = useRef(0)
   const spinAnimRef = useRef<Animated.CompositeAnimation | null>(null)
-  // 每次重新起停都换一个令牌：已被停掉的旧动画即使回调晚到（finished 为 true）
-  // 也不能再接着串下一圈，否则会和新的动画叠成双倍转速
-  const spinTokenRef = useRef(0)
-  const playingRef = useRef(isPlaying)
-  const wasPlayingRef = useRef(isPlaying)
-  const aliveRef = useRef(true)
+  const spinProgressRef = useRef(0)
+  const spinFromRef = useRef(0)
+  const spinStartRef = useRef(0)
   const needleValue = useRef(new Animated.Value(isPlaying ? 1 : 0)).current
 
-  useEffect(() => {
-    aliveRef.current = true
-    return () => {
-      aliveRef.current = false
-      spinAnimRef.current?.stop()
-    }
-  }, [])
-
-  useEffect(() => {
-    playingRef.current = isPlaying
-    const wasPlaying = wasPlayingRef.current
-    wasPlayingRef.current = isPlaying
-    const token = ++spinTokenRef.current
-    const isStale = () => spinTokenRef.current !== token
-
-    const runConstant = () => {
-      if (!aliveRef.current || !playingRef.current || isStale()) return
-      const to = spinPosRef.current + 1
-      spinPosRef.current = to
-      const anim = Animated.timing(spinValue, {
-        toValue: to,
-        duration: SPIN_PERIOD,
-        easing: Easing.linear,
-        useNativeDriver: true,
-        isInteraction: false,
-      })
-      spinAnimRef.current = anim
-      anim.start(({ finished }) => {
-        if (finished && !isStale()) runConstant()
-      })
-    }
-
-    // stopAnimation 会把原生驱动中的当前角度同步回来，以它为准继续/刹车
-    spinValue.stopAnimation(value => {
-      if (!aliveRef.current || isStale()) return
-      if (playingRef.current) {
-        const to = value + RAMP_TURNS
-        spinPosRef.current = to
-        const anim = Animated.timing(spinValue, {
-          toValue: to,
-          duration: SPIN_RAMP,
-          easing: Easing.in(Easing.quad),
-          useNativeDriver: true,
-          isInteraction: false,
-        })
-        spinAnimRef.current = anim
-        anim.start(({ finished }) => {
-          if (finished && !isStale()) runConstant()
-        })
-      } else if (wasPlaying) {
-        // 第一次挂载且本来就没在播时不要刹车，否则唱片会自己转小半圈
-        const to = value + RAMP_TURNS
-        spinPosRef.current = to
-        const anim = Animated.timing(spinValue, {
-          toValue: to,
-          duration: SPIN_RAMP,
-          easing: Easing.out(Easing.quad),
-          useNativeDriver: true,
-          isInteraction: false,
-        })
-        spinAnimRef.current = anim
-        anim.start()
-      } else {
-        spinPosRef.current = value
-      }
+  // 旋转循环：RN 的 Animated.loop 返回对象没有 pause()/resume() 方法（运行时
+  // 为 undefined，调用会抛 TypeError: undefined is not a function），因此用
+  // 「stopAnimation + 墙上时钟计算当前角度 + 按剩余时长重建 timing」手动实现
+  // 暂停/续播。360deg 与 0deg 视觉等价，续播无跳变，不会出现「雨刮式」顿挫。
+  // 注：原生驱动下 stopAnimation 回调返回的是 JS 侧过期值，所以角度用
+  // (起始角度 + 已播放时长/周期) 推算，而不依赖回调值。
+  const pauseSpin = () => {
+    if (!spinAnimRef.current) return
+    spinAnimRef.current.stop()
+    spinAnimRef.current = null
+    const elapsed = Date.now() - spinStartRef.current
+    spinProgressRef.current = spinFromRef.current + elapsed / SPIN_PERIOD
+  }
+  const startSpin = () => {
+    if (spinAnimRef.current) return
+    const from = spinProgressRef.current
+    const to = Math.floor(from) + 1
+    const anim = Animated.timing(spinValue, {
+      toValue: to,
+      duration: SPIN_PERIOD * (to - from),
+      easing: Easing.linear,
+      useNativeDriver: true,
+      isInteraction: false,
     })
+    anim.start(({ finished }) => {
+      if (!finished) return
+      spinProgressRef.current = to
+      spinAnimRef.current = null
+      startSpin()
+    })
+    spinFromRef.current = from
+    spinStartRef.current = Date.now()
+    spinAnimRef.current = anim
+  }
 
-    return () => {
-      spinTokenRef.current += 1
-      spinAnimRef.current?.stop()
+  useEffect(() => {
+    if (isPlaying) {
+      startSpin()
+    } else {
+      pauseSpin()
     }
   }, [isPlaying, spinValue])
+
+  useEffect(() => () => { spinAnimRef.current?.stop() }, [])
 
   useEffect(() => {
     Animated.timing(needleValue, {
@@ -139,8 +101,10 @@ const TVVinylRecord = ({ image, isPlaying, size = 392, onCoverError, style }: Pr
   const centerHoleSize = size * 0.052
   const recordBorder = Math.max(10, Math.round(size * 0.04))
   const coverBorder = Math.max(5, Math.round(size * 0.026))
-  // 唱臂：零尺寸的旋转容器放在支点上，唱臂从支点向左伸出，
-  // 这样旋转原点就是支点本身（原来绕臂中心转，臂根会甩离底座）
+  // 随盘旋转的小标记点：无封面时盘面是同心圆、对称看不出在转，用它提供旋转参照
+  const spinMarkSize = Math.max(5, Math.round(size * 0.028))
+  // 唱臂：旋转容器以支点为中心（right/top 各回退一个半径），唱臂从支点向左伸出。
+  // 这样旋转原点就是支点本身（原实现绕臂中心转，摆动时臂根会甩离底座）
   const pivotRight = size * 0.1
   const pivotTop = size * 0.1
   const armLen = size * 0.43
@@ -176,12 +140,17 @@ const TVVinylRecord = ({ image, isPlaying, size = 392, onCoverError, style }: Pr
             }]}
           />
         ))}
+        <View style={[styles.spinMark, {
+          top: recordSize * 0.11,
+          left: (recordSize - spinMarkSize) / 2,
+          width: spinMarkSize,
+          height: spinMarkSize,
+          borderRadius: spinMarkSize / 2,
+        }]} />
         <View style={[styles.coverWrap, { width: coverSize, height: coverSize, borderRadius: coverSize / 2, borderWidth: coverBorder }]}>
           {image ? (
             <Image url={image} style={styles.coverImage as ImageStyle} onError={onCoverError} />
-          ) : (
-            <TVText variant="cardTitle" color={tvColors.primaryHigh}>音乐</TVText>
-          )}
+          ) : null}
           <View style={[styles.centerHole, { width: centerHoleSize, height: centerHoleSize, borderRadius: centerHoleSize / 2 }]} />
         </View>
       </Animated.View>
@@ -221,7 +190,7 @@ const TVVinylRecord = ({ image, isPlaying, size = 392, onCoverError, style }: Pr
           height: Math.max(1, Math.round(armT * 0.2)),
         }]} />
         <View style={[styles.headshell, {
-          right: armLen * 2 - headLen * 0.72,
+          right: armLen * 2 - headLen,
           top: armLen - headH / 2,
           width: headLen,
           height: headH,
@@ -277,6 +246,10 @@ const styles: Record<string, ViewStyle> = {
     position: 'absolute',
     borderWidth: 1,
   },
+  spinMark: {
+    position: 'absolute',
+    backgroundColor: 'rgba(255,255,255,0.3)',
+  },
   coverWrap: {
     overflow: 'hidden',
     backgroundColor: tvColors.bgWarm,
@@ -324,15 +297,12 @@ const styles: Record<string, ViewStyle> = {
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.12)',
   },
-  // 宽高为 0，旋转原点即支点；唱臂用 right:0 从支点向左伸出
+  // 边长 2*armLen，旋转原点在容器中心 = 唱臂支点
   armPivot: {
     position: 'absolute',
-    width: 0,
-    height: 0,
   },
   toneArm: {
     position: 'absolute',
-    right: 0,
     backgroundColor: '#f4eeee',
   },
   toneArmShine: {

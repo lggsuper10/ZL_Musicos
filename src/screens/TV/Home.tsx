@@ -3,6 +3,7 @@ import { ScrollView, View, useWindowDimensions, findNodeHandle, type ViewStyle }
 import TVAppleScaffold from '@/components/TV/TVAppleScaffold'
 import TVTopTabs from '@/components/TV/TVTopTabs'
 import TVHeroShelf from '@/components/TV/TVHeroShelf'
+import TVPlayingBars from '@/components/TV/TVPlayingBars'
 import TVShelf from '@/components/TV/TVShelf'
 import TVPosterCard from '@/components/TV/TVPosterCard'
 import TVButton from '@/components/TV/TVButton'
@@ -214,7 +215,14 @@ function TVHome({ componentId }: { componentId: string }) {
       <TVTopTabs items={createTVTabs(componentId, 'home')} activeId="home" hasTVPreferredFocus nextFocusDown={playFocus.getNodeHandle() ?? undefined} activeTabRef={activeTabFocus as any} onActiveTabReady={queueFocusRefresh} />
       <ScrollView ref={contentScrollRef} style={styles.contentScroll} showsVerticalScrollIndicator={false}>
         <View onLayout={event => { sectionOffsetRef.current.hero = event.nativeEvent.layout.y }}>
-          <TVHeroShelf kicker={tvText.todayRecommend} title={heroTitle} subtitle={heroSubtitle} image={musicInfo.pic} scale={contentScale}>
+          <TVHeroShelf
+            kicker={tvText.todayRecommend}
+            title={heroTitle}
+            subtitle={heroSubtitle}
+            image={musicInfo.pic}
+            scale={contentScale}
+            leadingIndicator={musicInfo.id ? <TVPlayingBars active={isPlay} /> : null}
+          >
             <TVButton ref={playFocus.ref as any} label={musicInfo.id ? '查看详情' : tvText.searchSong} tone="dark" style={heroButtonStyle} onFocus={() => { scrollToHero() }} onTVFocusChange={handleHeroFocusChange} onPress={() => {
               if (musicInfo.id) { pushTVPlayerScreen(componentId); return }
               pushTVSearchScreen(componentId)

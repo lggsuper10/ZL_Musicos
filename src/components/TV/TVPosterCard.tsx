@@ -101,7 +101,7 @@ const styles: Record<string, ViewStyle | TextStyle> = {
     bottom: 0,
     borderRadius: tvTokens.radiusLg,
     borderWidth: tvSize(3),
-    borderColor: tvColors.primaryHigh,
+    borderColor: tvColors.focus,
   },
   placeholder: {
     fontSize: tvFont(74),

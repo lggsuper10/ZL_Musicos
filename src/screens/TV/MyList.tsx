@@ -372,7 +372,7 @@ const styles: Record<string, ViewStyle | TextStyle | any> = {
   },
   // 焦点高亮只画在封面上（见 importArtFocus），整卡不再套一圈，避免双边框
   importCardFocus: { backgroundColor: 'transparent', borderColor: 'transparent', shadowOpacity: 0, elevation: 0 },
-  importArtFocus: { borderColor: tvColors.primaryHigh, borderStyle: 'solid', backgroundColor: 'rgba(255,255,255,0.08)' },
+  importArtFocus: { borderColor: tvColors.focus, borderStyle: 'solid', backgroundColor: 'rgba(255,255,255,0.08)' },
   importPlus: { color: tvColors.primaryHigh, fontWeight: '900' },
   importTitle: { marginTop: tvSize(14) },
   importHint: { marginTop: tvSize(5) },

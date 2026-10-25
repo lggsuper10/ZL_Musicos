@@ -60,7 +60,7 @@ const styles: Record<string, ViewStyle | any> = {
   },
   focus: {
     backgroundColor: tvColors.glassHigh,
-    borderColor: tvColors.primaryHigh,
+    borderColor: tvColors.focus,
   },
   cover: {
     height: 174,

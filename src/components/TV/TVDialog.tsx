@@ -3,7 +3,7 @@ import { BackHandler, Pressable, Text, View, type TextStyle, type ViewStyle } fr
 import { onTVRemoteEvent } from '@/utils/nativeModules/utils'
 import { setTVDialogActive } from './tvFocusManager'
 import TVText from './TVText'
-import { tvColors, tvSize } from '@/theme/tv'
+import { tvColors, tvSize, tvTokens } from '@/theme/tv'
 
 export interface TVDialogButtonConfig {
   label: string
@@ -203,7 +203,7 @@ const styles: Record<string, ViewStyle | TextStyle> = {
     minHeight: tvSize(54),
     paddingHorizontal: tvSize(26),
     paddingVertical: tvSize(14),
-    borderRadius: tvSize(28),
+    borderRadius: tvTokens.radiusBtn,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,

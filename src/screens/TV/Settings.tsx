@@ -606,6 +606,8 @@ function TVSettings({ componentId }: { componentId: string }) {
                     <Focusable
                       ref={bindFocusRef(sourceRefs, focusKey, index === 0) as any}
                       style={[styles.sourceItem, active ? styles.sourceActive : null]}
+                      // 当前音源用绿底选中；带焦点时亮一档，去掉 Focusable 默认的白边
+                      focusStyle={active ? styles.sourceActiveFocus : undefined}
                       onFocus={() => { handleSourceItemFocus(focusKey) }}
                       onPress={() => { setApiSource(src.id) }}
                       onLongPress={() => { showSourceActionMenu(src) }}
@@ -616,10 +618,10 @@ function TVSettings({ componentId }: { componentId: string }) {
                     >
                       <View style={styles.sourceRow}>
                         <View style={styles.sourceInfo}>
-                          <TVText variant="cardTitle" numberOfLines={1}>{src.name}</TVText>
-                          <TVText variant="caption" style={styles.line} numberOfLines={1}>{src.desc ?? (src.id || tvText.defaultSource)}</TVText>
+                          <TVText variant="cardTitle" numberOfLines={1} color={active ? tvColors.bgDeep : undefined}>{src.name}</TVText>
+                          <TVText variant="caption" style={styles.line} color={active ? 'rgba(6,8,16,0.72)' : tvColors.subtext} numberOfLines={1}>{src.desc ?? (src.id || tvText.defaultSource)}</TVText>
                         </View>
-                        <TVText variant="caption" color={active ? tvColors.primaryHigh : tvColors.subtext}>{active ? tvText.currentUsing : src.status ?? ''}</TVText>
+                        <TVText variant="caption" color={active ? tvColors.bgDeep : tvColors.subtext}>{active ? tvText.currentUsing : src.status ?? ''}</TVText>
                       </View>
                     </Focusable>
                   </View>
@@ -639,7 +641,7 @@ function TVSettings({ componentId }: { componentId: string }) {
                 {updateProgressText ? <TVText variant="caption" color={tvColors.subtext} numberOfLines={1}>{tvText.downloadProgress}{dot}{updateProgressText}</TVText> : null}
               </View>
               <TVButton ref={updateButtonFocus.ref as any} label={updateButtonLabel} tone={updateStatus === 'available' || updateStatus === 'downloaded' ? 'primary' : 'dark'} onPress={() => { void handleUpdatePress() }} nextFocusLeft={firstSourceFocus.getNodeHandle() ?? undefined} nextFocusDown={lanButtonFocus.getNodeHandle() ?? undefined} />
-              <TVText variant="caption" color={updateStatus === 'error' ? tvColors.warn : tvColors.primaryHigh} style={styles.message}>{updateMessage || tvText.installConfirmTip}</TVText>
+              {updateMessage ? <TVText variant="caption" color={updateStatus === 'error' ? tvColors.warn : tvColors.primaryHigh} style={styles.message}>{updateMessage}</TVText> : null}
             </View>
 
             <View style={styles.sectionDivider} />
@@ -680,29 +682,30 @@ const styles: Record<string, ViewStyle | TextStyle | any> = {
   // 与首页/我的歌单一致：页面直接落在背景上，不再用大面板把整栏圈起来，
   // 分区靠标题 + 留白 + 细分隔线区分。
   root: { flex: 1 },
-  pageHeader: { marginBottom: tvSize(22) },
+  pageHeader: { marginBottom: tvSize(12) },
   pageTitle: { fontSize: tvFont(34), lineHeight: tvFont(40) },
-  pageHint: { marginTop: tvSize(6) },
+  pageHint: { marginTop: tvSize(4) },
   body: { flex: 1, flexDirection: 'row', gap: tvSize(32) },
   sourceColumn: { flex: 1, minWidth: 0 },
   sectionTitle: { fontSize: tvTokens.railTitle, lineHeight: tvFont(32) },
   sectionDesc: { marginTop: tvSize(4) },
   sourceContent: { paddingBottom: tvSize(20) },
   sourceBlock: { marginBottom: tvSize(12) },
-  sourceItem: { borderRadius: tvSize(24), backgroundColor: 'rgba(255,255,255,0.075)', borderWidth: 1, borderColor: tvColors.border, padding: tvSize(18) },
-  sourceActive: { backgroundColor: tvColors.primarySoft, borderColor: tvColors.primaryHigh },
+  sourceItem: { borderRadius: tvTokens.radiusBtn, backgroundColor: 'rgba(255,255,255,0.075)', borderWidth: 1, borderColor: tvColors.border, padding: tvSize(18) },
+  sourceActive: { backgroundColor: tvColors.selectGreen, borderColor: tvColors.selectGreen },
+  sourceActiveFocus: { backgroundColor: tvColors.selectGreenFocus, borderColor: tvColors.selectGreenFocus, shadowColor: tvColors.selectGreen },
   sourceRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: tvSize(16) },
   sourceInfo: { flex: 1 },
   listHint: { marginTop: tvSize(14), marginBottom: tvSize(10) },
   rightColumn: { width: tvSize(430), flexShrink: 0 },
-  rightContent: { paddingBottom: tvSize(20) },
-  sectionDivider: { height: 1, backgroundColor: tvColors.line, marginVertical: tvSize(22) },
-  updateMeta: { gap: tvSize(8), marginTop: tvSize(16), marginBottom: tvSize(18) },
+  rightContent: { paddingBottom: tvSize(12) },
+  sectionDivider: { height: 1, backgroundColor: tvColors.line, marginVertical: tvSize(12) },
+  updateMeta: { gap: tvSize(6), marginTop: tvSize(8), marginBottom: tvSize(12) },
   line: { marginTop: tvSize(9) },
-  message: { marginTop: tvSize(14) },
+  message: { marginTop: tvSize(10) },
   // 手机扫码结果框：放在按钮上方，带边框与底色，保证不用滚动就能看到
   lanResult: { marginTop: tvSize(14), marginBottom: tvSize(14), paddingVertical: tvSize(12), paddingHorizontal: tvSize(16), borderRadius: tvSize(12), borderWidth: 1 },
-  lanResultOk: { backgroundColor: 'rgba(255,255,255,0.06)', borderColor: tvColors.primaryHigh },
+  lanResultOk: { backgroundColor: 'rgba(255,255,255,0.06)', borderColor: tvColors.focus },
   lanResultWarn: { backgroundColor: 'rgba(241,195,109,0.10)', borderColor: tvColors.warn },
   // 二维码居中弹层：全屏遮罩 + 中央白卡（此前嵌在右栏里被其他 UI 遮住一部分，扫不了码）
   qrOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(2,3,8,0.92)', alignItems: 'center', justifyContent: 'center', zIndex: 900, elevation: 40, gap: tvSize(18), paddingHorizontal: tvSize(80) },

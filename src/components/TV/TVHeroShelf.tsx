@@ -1,4 +1,4 @@
-import { memo, type PropsWithChildren } from 'react'
+import { memo, type PropsWithChildren, type ReactNode } from 'react'
 import { View, type ImageStyle, type TextStyle, type ViewStyle } from 'react-native'
 import Image from '@/components/common/Image'
 import TVText from './TVText'
@@ -9,6 +9,8 @@ interface Props {
   title: string
   subtitle?: string
   image?: string | null
+  /** 副标题前的内联元素（如「正在播放」跳动条），与文本同一行 */
+  leadingIndicator?: ReactNode
   style?: ViewStyle | ViewStyle[]
   /**
    * Hero 整体等比缩放系数（标题、副标题、封面、按钮间距一起缩）。
@@ -17,14 +19,19 @@ interface Props {
   scale?: number
 }
 
-const TVHeroShelf = ({ kicker, title, subtitle, image, style, scale = 1, children }: PropsWithChildren<Props>) => {
+const TVHeroShelf = ({ kicker, title, subtitle, image, style, scale = 1, leadingIndicator, children }: PropsWithChildren<Props>) => {
   const z = (value: number) => Math.max(1, Math.round(value * scale))
   return (
     <View style={[styles.root, { minHeight: z(tvSize(300)) }, style]}>
       <View style={[styles.copy, { paddingRight: z(tvSize(44)) }]}>
         {kicker ? <TVText variant="caption" style={[styles.kicker, { fontSize: z(tvTokens.caption) }]}>{kicker}</TVText> : null}
         <TVText variant="pageTitle" style={[styles.title, { marginTop: z(tvSize(10)), fontSize: z(tvFont(56)), lineHeight: z(tvFont(66)) }]} numberOfLines={2}>{title}</TVText>
-        {subtitle ? <TVText variant="body" style={[styles.subtitle, { marginTop: z(tvSize(12)), fontSize: z(tvFont(19)), lineHeight: z(tvFont(29)) }]} numberOfLines={2}>{subtitle}</TVText> : null}
+        {subtitle ? (
+          <View style={[styles.subtitleRow, { marginTop: z(tvSize(12)) }]}>
+            {leadingIndicator}
+            <TVText variant="body" style={[styles.subtitle, { fontSize: z(tvFont(19)), lineHeight: z(tvFont(29)) }]} numberOfLines={2}>{subtitle}</TVText>
+          </View>
+        ) : null}
         <View style={[styles.actions, { gap: z(tvSize(14)), marginTop: z(tvSize(28)) }]}>{children}</View>
       </View>
       <View style={[styles.coverWrap, { width: z(tvSize(276)), height: z(tvSize(276)), borderRadius: z(tvSize(36)) }]}>
@@ -52,8 +59,12 @@ const styles: Record<string, ViewStyle | TextStyle | ImageStyle> = {
     fontSize: tvTokens.heroTitle,
     lineHeight: tvFont(66),
   },
+  subtitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: tvSize(10),
+  },
   subtitle: {
-    marginTop: tvSize(12),
     color: tvColors.subtext,
     lineHeight: tvFont(29),
   },

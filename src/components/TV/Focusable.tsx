@@ -228,8 +228,8 @@ const styles: Record<string, ViewStyle> = {
     borderColor: 'transparent',
   },
   focused: {
-    borderColor: tvColors.primaryHigh,
-    shadowColor: tvColors.primaryHigh,
+    borderColor: tvColors.focus,
+    shadowColor: tvColors.focus,
     shadowOpacity: 0.5,
     shadowRadius: tvSize(14),
     shadowOffset: { width: 0, height: tvSize(3) },

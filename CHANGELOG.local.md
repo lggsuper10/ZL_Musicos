@@ -829,6 +829,20 @@ graph LR
 
 ---
 
+## ✅ 播放页黑胶↔海报交叉淡入（2026-10-25）
+
+**现象**：海报未加载出来时显示一张沿中心旋转的黑胶唱片作占位（老板 10-25 需求），
+但海报 `onLoad` 后黑胶是**瞬间卸载**（原地「跳走」），而不是淡出消失，转场生硬。
+
+**修法**：`src/screens/TV/Player.tsx` 把「黑胶/海报」由「互斥条件渲染」改为「常驻 + 交叉淡入」——
+两个 `Animated.View` 共用 `vinylOpacity` / `posterOpacity`（0↔1 反向），海报就绪时
+黑胶沿中心旋转着淡出消失（380ms）、海报同步淡入；未就绪（含无 pic）时黑胶保持
+`opacity:1` 照常旋转。`TVVinylRecord` 的 `isPlaying` 在海报就绪后传 `false`，淡出阶段
+结束后黑胶不再空转。`coverPending` 不再强制 `opacity`（改由 `posterOpacity` 驱动），只保
+留「去阴影/海拔」以规避安卓在黑胶周围留方形投影。
+
+---
+
 ## ✅ 批次 4：TV 端下载功能（2026-10-24）
 
 **动机**：用户反馈“没看到下载功能、也没有本地歌曲”——批次 3 的下载只做在手机端，TV 端没有任何入口。
@@ -860,6 +874,46 @@ graph LR
 下载完成由 `core/download` 自动创建固定 id `userlist_download` 的用户歌单并加入歌曲；TV「我的歌单」页读 `useMyList()`，**自动出现“本地歌曲”卡**（无需改动）。点进去即可播放（走 Detail 的 userlist → TEMP 播放链路）。用户此前“没看到本地歌曲”是因为没有任何下载入口、歌单从未被创建。
 
 **验证**：eslint 4 个改动文件 0 error（Detail.tsx:131 的 exhaustive-deps 警告为上游既有）；`tsc --noEmit` 全量 15 error（上游遗留基线），改动文件 0 新增。
+
+---
+
+## ✅ 播放页本地歌曲识别与下载按钮隐藏（2026-10-25）
+
+**动机（老板反馈）**：播放详情页（TV `Player.tsx`）对本地歌曲① 仍显示「下载」按钮（本地歌没下载概念）；
+② 来源位显示的是全局 `common.apiSource`（如「网易云」）而非「本地」，辨识不出是本地歌。
+
+### 改动（`src/screens/TV/Player.tsx`，均为修改）
+
+| 点 | 说明 |
+|---|---|
+| 1 | 新增派生 `isLocalMusic`（与 `handleDownload` 同口径：`'progress' in musicInfo` 时取 `metadata.musicInfo`，再判 `source === 'local'`）；并派生 `downloadNode`（本地歌时置 `null` 让焦点链跳过下载钮） |
+| 2 | 下载圆钮改为 `{!isLocalMusic && (...)}`：本地歌不渲染，上一首/常驻按钮的 `nextFocusRight`/`nextFocusLeft` 直接跳过下载钮接驳 |
+| 3 | 本地歌在歌名下方新增「本地」圆角胶囊徽标（`localBadge`/`localBadgeText`，主题色描边+浅底）；来源位 `sourceMeta` 对本地歌显示 `tvText.local`（「本地」）而非全局音源名 |
+| 4 | `coverPending` 不再强制 `opacity`（交给交叉淡入的 `posterOpacity` 驱动，见下条） |
+| 5 | **顺带修（上一条反馈）**：海报加载完成后黑胶由「瞬间卸载」改为「沿中心旋转着淡出消失、海报同步淡入」（`vinylOpacity`/`posterOpacity` 380ms 交叉淡入；淡出后传 `isPlaying=false` 让黑胶不再空转） |
+
+**验证**：eslint 改动文件 0 error；`tsc --noEmit` 改动文件 0 新增 error（全量 15 error 均为上游遗留基线）。
+
+---
+
+## ✅ 黑胶旋转平滑化 + 去掉「音乐」文字（2026-10-25）
+
+**动机（老板反馈）**：播放详情页黑胶旋转不稳定，「像雨刮一样一刮一刮的」；并要求去掉盘面中央的「音乐」两个字。
+
+### 根因
+
+旧实现用「累计圈数 + 起转/刹车二次缓动（in/out quad）+ stopAnimation 同步」递归串圈。
+缓动换挡与 stopAnimation 回读在播放/暂停切换时会产生角速度突变与轻微角度回弹，观感上就是来回顿挫。
+
+### 改动（`src/components/TV/TVVinylRecord.tsx`，修改）
+
+| 点 | 说明 |
+|---|---|
+| 1 | 旋转改为 `Animated.loop(Animated.timing(spinValue, toValue:1, SPIN_PERIOD, Easing.linear, native))`：`spin` 0→1 匀速循环、`rotate` 映射 0→360deg；360° 与 0° 视觉等价，循环衔接无跳变 |
+| 2 | 暂停用 `pause()` 冻结角度、续播 `resume()` 从原角度接着转，不回弹；删除 `spinPosRef`/`spinTokenRef`/`playingRef`/`wasPlayingRef`/`aliveRef` 及 `SPIN_RAMP`/`RAMP_TURNS` |
+| 3 | 去掉盘面中央「音乐」`TVText`（并移除不再使用的 `TVText` 导入）；新增随盘旋转的小标记点 `spinMark`（半径约 `size*0.028`，位于盘面 11% 处、在黑色沟槽区，不被封面遮挡），让对称圆盘的旋转可见 |
+
+**验证**：eslint 改动文件 0 error。
 
 ---
 

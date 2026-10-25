@@ -43,7 +43,7 @@ const styles: Record<string, ViewStyle | TextStyle> = {
     minHeight: tvSize(54),
     paddingHorizontal: tvSize(26),
     paddingVertical: tvSize(14),
-    borderRadius: tvTokens.radiusPill,
+    borderRadius: tvTokens.radiusBtn,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
@@ -74,7 +74,7 @@ const styles: Record<string, ViewStyle | TextStyle> = {
   },
   focusDefault: {
     backgroundColor: 'rgba(255,255,255,0.16)',
-    borderColor: tvColors.text,
+    borderColor: tvColors.focus,
   },
   text: {
     fontWeight: '900',

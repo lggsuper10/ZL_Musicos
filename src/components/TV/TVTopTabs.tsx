@@ -6,6 +6,9 @@ import { blurActiveTVTarget, focusTVTargetByRef } from './tvFocusManager'
 import { getTVTabHost, getTVTabHostActiveId, subscribeTVTabHostActive, TVTabHostContext } from './tvTabHost'
 import { tvColors, tvSize, tvTokens } from '@/theme/tv'
 
+// 选中态用微信式绿色整块填充（老板 10-25 需求）；深色文字在 #07C160 上对比度最好
+const TAB_ACTIVE_GREEN = tvColors.selectGreen
+
 export interface TVTabItem {
   id: string
   label: string
@@ -88,7 +91,9 @@ const TabButton = forwardRef<any, TabButtonProps>(({ item, current, scheduleActi
     <Focusable
       ref={ref}
       style={[styles.tab, current && styles.tabActive]}
-      focusStyle={styles.tabFocus}
+      // 选中的 tab 保持绿底，焦点只加同色光晕。不能用 Focusable 默认焦点态：
+      // 那层 primaryHigh 白边压在绿底上就是用户说的「白边」
+      focusStyle={current ? styles.tabActiveFocus : styles.tabFocus}
       onPress={activate}
       // 焦点落到哪个 tab 就直接切到哪个页面（老板需求 09-22），不用再按 OK 确认。
       // current 的 tab 不切：详情页内容按上键会回到「当前 tab」，若也切就会原地重开一页
@@ -260,7 +265,8 @@ const styles: Record<string, ViewStyle | TextStyle> = {
   tab: {
     minHeight: tvSize(48),
     paddingHorizontal: tvSize(16),
-    borderRadius: tvTokens.radiusPill,
+    // 小圆角：原来的胶囊形弧度过大，和电视界面的方块卡片不搭
+    borderRadius: tvSize(10),
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -272,12 +278,21 @@ const styles: Record<string, ViewStyle | TextStyle> = {
     fontSize: tvTokens.nav,
     fontWeight: '700',
   },
-  // 当前选中的 tab：即使焦点已移到内容区也始终高亮，让用户一眼看清所在栏目
+  // 当前选中的 tab：整块填微信绿，即使焦点已移到内容区也始终高亮
   tabActive: {
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: TAB_ACTIVE_GREEN,
+  },
+  // 选中 tab 带焦点：描边也用绿色（等价于无边框），只留同色光晕。
+  // 系统白圈已在 values-v28 主题里关掉，绿底+绿边在 Android 上等于看不出焦点，
+  // 所以这里额外把底色提亮一档作为焦点反馈。
+  tabActiveFocus: {
+    backgroundColor: tvColors.selectGreenFocus,
+    borderColor: TAB_ACTIVE_GREEN,
+    shadowColor: TAB_ACTIVE_GREEN,
+    shadowOpacity: 0.55,
   },
   tabTextActive: {
-    color: tvColors.primaryHigh,
+    color: tvColors.bgDeep,
     fontWeight: '800',
   },
 }
