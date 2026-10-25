@@ -28,7 +28,7 @@ import { windowSizeTools } from '@/utils/windowSizeTools'
 import { type ListInfoItem } from '@/store/songlist/state'
 import type { TVDetailPayload } from '@/screens/TV/types'
 import { requestTabFocusOnArrival } from '@/components/TV/TVTopTabs'
-import { getTVTabHost } from '@/components/TV/tvTabHost'
+import { getTVTabHost, getTVTabHostFor } from '@/components/TV/tvTabHost'
 
 const TV_BACKGROUND_COLOR = '#060810'
 const TV_PUSH_ANIMATION = {
@@ -708,11 +708,31 @@ let tvTabSwitchPending: { target: TVTabTarget, at: number } | null = null
  * 连按左右时以最后一次为准：旧命令回到首页后发现自己已过期就不再 push。
  */
 export const switchTVTab = (componentId: string, target: TVTabTarget) => {
-  const host = getTVTabHost()
-  if (host) {
+  // 只有调用方自己就是宿主屏（宿主内的 tab 页拿到的也是宿主 componentId）才能直接换页；
+  // 详情页/播放页这类 push 屏必须先 pop 自己，否则会走到下面的「切了底层 tab 但当前屏不动」
+  const hostForCaller = getTVTabHostFor(componentId)
+  if (hostForCaller) {
     // 标记「这次是顶栏切过来的」，目标页里异步加载完成的焦点补偿会让位给顶栏
     if (target !== 'home') requestTabFocusOnArrival(target)
-    host.show(target)
+    hostForCaller.show(target)
+    return
+  }
+
+  // push 屏（详情页/播放页）的顶栏切 tab：先弹掉自己回到宿主，再切目标 tab。
+  // 不能拿全局 host 直接 show：那只是把被盖住的底层 tab 切了，当前屏纹丝不动，
+  // 而焦点已被 activate blur 掉，表现就是「菜单切不动、焦点凭空消失/被内容区抢回」。
+  const host = getTVTabHost()
+  if (host && componentId) {
+    tvTabSwitchChain = tvTabSwitchChain.then(async() => {
+      try {
+        await Navigation.pop(componentId)
+      } catch {
+        // 连按左右时前一次已把本屏弹掉，pop 失败不影响继续切 tab
+      }
+      // 宿主 broadcast 会让目标页顶栏拿到焦点（Shell.handleAppear 的
+      // refreshTVTabHostFocus 也兜一道），无需 arrival 标记
+      host.show(target)
+    }).catch(() => { })
     return
   }
 

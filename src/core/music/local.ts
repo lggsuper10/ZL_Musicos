@@ -3,6 +3,7 @@ import { saveLyric, saveMusicUrl } from '@/utils/data'
 import { updateListMusics } from '@/core/list'
 import {
   buildLyricInfo,
+  existTimeExp,
   getCachedLyricInfo,
   getOnlineOtherSourceLyricByLocal,
   getOnlineOtherSourceLyricInfo,
@@ -14,7 +15,8 @@ import {
 } from './utils'
 import { getLocalFilePath } from '@/utils/music'
 import { readLyric, readPic } from '@/utils/localMediaMetadata'
-import { stat } from '@/utils/fs'
+import { readFile, stat } from '@/utils/fs'
+import iconv from 'iconv-lite'
 
 const getOtherSourceByLocal = async<T>(musicInfo: LX.Music.MusicInfoLocal, handler: (infos: LX.Music.MusicInfoOnline[]) => Promise<T>) => {
   let result: LX.Music.MusicInfoOnline[] = []
@@ -188,6 +190,39 @@ const getMusicFileLyric = async(filePath: string) => {
   if (!lyric) return null
   return parseLyric(lyric)
 }
+
+/**
+ * 读取音频旁边同名的 .lrc 文件。
+ *
+ * 本地歌曲原来只有三条歌词来源：音频内嵌标签、歌词缓存、在线匹配。
+ * 用户把「歌曲 + 同名 .lrc」一起拷进电视是很常见的用法，而这类文件通常没有内嵌歌词，
+ * 一旦没网或在线源搜不到，就一条歌词都拿不到。补上外挂歌词后离线也能直接出词。
+ *
+ * 文件先按 base64 读出来自己解码：中文 lrc 很多是 GBK/GB18030，直接按 UTF-8 读会乱码；
+ * UTF-8 解码出现替换字符时回退到 GB18030。
+ */
+const getSidecarLyric = async(filePath: string) => {
+  if (!filePath) return null
+  const nameStart = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'))
+  const dot = filePath.lastIndexOf('.')
+  const base = dot > nameStart ? filePath.substring(0, dot) : filePath
+  for (const ext of ['.lrc', '.LRC']) {
+    const base64 = await readFile(base + ext, 'base64').catch(() => null)
+    if (!base64) continue
+    let lyric: string
+    try {
+      const raw = Buffer.from(base64, 'base64')
+      lyric = raw.toString('utf8')
+      if (lyric.includes('�')) lyric = iconv.decode(raw, 'gb18030')
+    } catch {
+      continue
+    }
+    // 只有纯文本、没有时间轴的 lrc 无法跟随播放滚动，当作没有歌词
+    if (!existTimeExp.test(lyric)) continue
+    return parseLyric(lyric)
+  }
+  return null
+}
 export const getLyricInfo = async({ musicInfo, isRefresh, skipFileLyric, onToggleSource = () => {} }: {
   musicInfo: LX.Music.MusicInfoLocal
   skipFileLyric?: boolean
@@ -204,6 +239,10 @@ export const getLyricInfo = async({ musicInfo, isRefresh, skipFileLyric, onToggl
     // 尝试读取文件内歌词
     const rawlrcInfo = await getMusicFileLyric(musicInfo.meta.filePath)
     if (rawlrcInfo) return buildLyricInfo(rawlrcInfo)
+
+    // 再看音频旁的同名 .lrc（离线可用）
+    const sidecarLyric = await getSidecarLyric(musicInfo.meta.filePath)
+    if (sidecarLyric) return buildLyricInfo(sidecarLyric)
 
     const lyricInfo = await getCachedLyricInfo(musicInfo)
     if (lyricInfo?.lyric) return buildLyricInfo(lyricInfo)

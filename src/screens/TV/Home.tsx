@@ -182,9 +182,15 @@ function TVHome({ componentId }: { componentId: string }) {
   }
 
   // 一屏布局：设计稿里 hero(≈280) + 歌单架(≈310) 在 720p 逻辑高度下正好占满，
-  // 换算成 tvSize 约 680。短屏（如 960×540dp 的 1080p 电视/模拟器）按实测内容高度
-  // 等比压缩，长屏保持 1 不放大。下限 0.5 防止极端小窗把字压到看不清。
-  const contentScale = useMemo(() => Math.max(0.5, Math.min(1, windowHeight / tvSize(680))), [windowHeight])
+  // 换算成 tvSize 约 680。
+  // 关键：顶栏和页面上下内边距是固定占用的高度，必须先扣掉，剩下的才是内容视口。
+  // 之前直接拿 windowHeight / 680 算系数，把顶栏和内边距也算进了内容区，系数偏大
+  // （720p 上算出来是 1.0），hero + 歌单架仍超出视口一截，首页不得不下滑。
+  // 短屏按可用高度等比压缩，长屏保持 1 不放大；下限 0.5 防止极端小窗把字压到看不清。
+  const chromeHeight = tvSize(34) * 2 + tvSize(74) + tvSize(26)
+  // 再留 12px 余量：各段尺寸都是取整后的和，四舍五入累加可能刚好差出 1~2px，
+  // 那点差值也会让 ScrollView 变成「可下滑」。
+  const contentScale = useMemo(() => Math.max(0.5, Math.min(1, (windowHeight - chromeHeight - tvSize(12)) / tvSize(680))), [chromeHeight, windowHeight])
   // 紧凑模式（屏幕矮）下省掉卡片第三行播放量：两行文字足够识别，
   // 省下的高度让给封面和标题，比把三行全挤成小字更好认。
   const compactCards = contentScale < 0.95

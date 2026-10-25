@@ -14,6 +14,7 @@ export interface ImageProps extends ViewProps {
   cache?: boolean
   resizeMode?: ComponentProps<typeof FastImage>['resizeMode']
   onError?: (url: string | number) => void
+  onLoad?: () => void
 }
 
 
@@ -34,7 +35,7 @@ const EmptyPic = memo(({ style, nativeID }: { style: ImageProps['style'], native
   )
 })
 
-const Image = memo(({ url, cache, resizeMode = 'cover', style, onError, nativeID }: ImageProps) => {
+const Image = memo(({ url, cache, resizeMode = 'cover', style, onError, onLoad, nativeID }: ImageProps) => {
   const [isError, setError] = useState(false)
   const handleError = useCallback(() => {
     setError(true)
@@ -62,6 +63,7 @@ const Image = memo(({ url, cache, resizeMode = 'cover', style, onError, nativeID
               // cache: cache === false ? 'web' : 'immutable',
             }}
             onError={handleError}
+            onLoad={onLoad}
             resizeMode={resizeMode}
             nativeID={nativeID}
           />

@@ -21,4 +21,6 @@ export const useTVNavigationBack = (componentId?: string) => {
   }, [componentId])
 
   useBackHandler(handleBack)
+
+  return handleBack
 }

@@ -178,7 +178,13 @@ const hasHorizontalOverlap = (from: FocusRect, to: FocusRect) =>
  * 典型翻车现场：顶部导航条（tab）与下方内容卡片在水平方向上落在同一段 x 区间时，
  * 从卡片按「右」会被导航条抢走（导航条水平上近几像素，竖直上偏了三五百像素），
  * 反之从导航条按「左」也会跳到下方卡片上。用户表现就是「遥控器选不中那张卡」。
- * 这里先只看「有重叠」的候选（同一排 / 同一列），没有重叠候选时才退回原来的全局打分。
+ * 这里先只看「有重叠」的候选（同一排 / 同一列）。
+ *
+ * 左右移动在同排没有候选时【不回退】到全局打分：回退会把焦点丢给别的区域，
+ * 最典型的就是「我的歌单」网格最右侧卡片按右 → 几何上最近的是正上方的顶部导航 tab，
+ * 焦点一跳上去就触发切页，用户看到的是「在模块内左右移动，结果跳到了顶部导航栏」。
+ * 模块内左右移动到行首/行尾时应当停在原地；上下移动仍保留回退（从内容区按上
+ * 本来就该能到顶部导航，tab 不一定与卡片横向重叠）。
  */
 const getSameBandCandidates = (from: FocusRect, candidates: Array<{ target: FocusTarget, score: number }>, direction: Direction) => {
   const horizontalMove = direction === 'left' || direction === 'right'
@@ -186,7 +192,8 @@ const getSameBandCandidates = (from: FocusRect, candidates: Array<{ target: Focu
     if (!target.rect) return false
     return horizontalMove ? hasVerticalOverlap(from, target.rect) : hasHorizontalOverlap(from, target.rect)
   })
-  return inBand.length ? inBand : candidates
+  if (inBand.length) return inBand
+  return horizontalMove ? [] : candidates
 }
 
 /**

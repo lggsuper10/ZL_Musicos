@@ -1,19 +1,24 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Animated, BackHandler, ImageBackground, ScrollView, useWindowDimensions, View, type ImageStyle, type TextStyle, type ViewStyle } from 'react-native'
 import Image, { defaultHeaders } from '@/components/common/Image'
+import { Icon } from '@/components/common/Icon'
 import TVAppleScaffold from '@/components/TV/TVAppleScaffold'
 import TVText from '@/components/TV/TVText'
 import TVRoundControl from '@/components/TV/TVRoundControl'
 import Focusable from '@/components/TV/Focusable'
 import TVNowPlayingDock from '@/components/TV/TVNowPlayingDock'
+import TVVinylRecord from '@/components/TV/TVVinylRecord'
 import TVFadeOverlay from '@/components/TV/TVFadeOverlay'
 import { getTVLayoutMetrics, tvColors, tvSize } from '@/theme/tv'
 import { useIsPlay, usePlayerMusicInfo, useProgress } from '@/store/player/hook'
 import { playNext, playPrev, togglePlay } from '@/core/player/player'
+import { setCurrentTime } from '@/plugins/player/utils'
 import { addDownloadTask } from '@/core/download'
 import { getPlayQuality } from '@/core/music/utils'
 import { showTVDialog } from '@/components/TV/TVDialog'
 import { toast } from '@/utils/tools'
+import { formatPlayTime2 } from '@/utils/common'
+import { getCachedIsTV } from '@/utils/tvMode'
 import settingState from '@/store/setting/state'
 import { useSettingValue } from '@/store/setting/hook'
 import { updateSetting } from '@/core/common'
@@ -26,6 +31,9 @@ import { useLrcPlay, useLrcSet } from '@/plugins/lyric'
 import { MUSIC_TOGGLE_MODE, MUSIC_TOGGLE_MODE_LIST } from '@/config/constant'
 import { tvText } from './labels'
 import { getPlayModeName, getSourceName } from './utils'
+
+// TEMP: 仅用于真机验证黑胶动画，验证后删除
+const FORCE_VINYL_FOR_CHECK = true
 
 const lyricMetaPattern = /^(作词|作曲|编曲|制作|制作人|制作统筹|制片人|监制|出品|出品人|发行|营销|推广|视频推广|推广策划|录音|混音|母带|和声|和音|音讯编辑|乐队总监|键盘手|PGM|弦乐|录音室|录音|混音|母带|吉他|贝斯|鼓|词|曲|OP|SP|ISRC|企划|统筹|鸣谢|版权|未经|未经许可|未经著作权人|封面设计|封面|设计|视觉|摄影|海报|文案|Cover|Cover Design|Artwork|Art Design|Design|Visual|Photography|Lyricist|Composer|Arranger|Producer|Mixing|Mastering).*[:：]?/i
 const lyricCopyrightPattern = /(未经|著作权人|许可|翻唱|翻录|使用|版权|Cover Design|Artwork|Art Design)/i
@@ -83,8 +91,17 @@ function TVPlayer({ componentId }: { componentId: string }) {
   const lyricFocus = useTVFocusRef()
   const downloadFocus = useTVFocusRef()
   const pinFocus = useTVFocusRef()
-  const [controlsPinned, setControlsPinned] = useState(false)
-  const controlsPinnedRef = useRef(false)
+  const backFocus = useTVFocusRef()
+  // 返回按钮聚焦态：tvOS 风格焦点是白底反色图标，图标颜色需要跟着焦点切换
+  const [backFocused, setBackFocused] = useState(false)
+  // 进度条 seek 状态：聚焦时左右键改走进度跳转，而非切歌；预览态覆盖进度条/时间
+  const seekFocusedRef = useRef(false)
+  const previewTimeRef = useRef(0)
+  const [seekPreview, setSeekPreview] = useState<{ percent: number, time: string } | null>(null)
+  // 控制栏默认常驻（老板 10-25 需求）：进度条和按钮始终留在屏上，不再 5 秒后自动隐藏。
+  // 仍保留右上角的「常驻」开关，用户主动关掉时才回到自动隐藏。
+  const [controlsPinned, setControlsPinned] = useState(true)
+  const controlsPinnedRef = useRef(true)
   useEffect(() => { controlsPinnedRef.current = controlsPinned }, [controlsPinned])
 
   // 下载当前歌曲（TV 端单曲下载入口）：弹音质选择后入队。
@@ -154,6 +171,21 @@ function TVPlayer({ componentId }: { componentId: string }) {
     }).catch(() => { })
     return () => { alive = false }
   }, [musicInfo.pic])
+  // 封面加载状态（老板 10-25 需求）：没有海报、还在加载、加载失败时，
+  // 左侧不再显示灰底「zl」占位，而是显示一张正在转的黑胶唱片；等海报真正
+  // onLoad 之后才切回方形封面。状态按 url 记录，换歌首帧就能判断，
+  // 不用等 effect 复位，避免旧封面闪一下。
+  const coverUrl = musicInfo.pic ?? null
+  const [coverState, setCoverState] = useState<{ url: string | null, loaded: boolean, failed: boolean }>({ url: null, loaded: false, failed: false })
+  const coverReady = FORCE_VINYL_FOR_CHECK || (!!coverUrl && coverState.url === coverUrl && coverState.loaded && !coverState.failed)
+  const coverUrlRef = useRef<string | null>(coverUrl)
+  coverUrlRef.current = coverUrl
+  const handleCoverLoad = useCallback(() => {
+    setCoverState({ url: coverUrlRef.current, loaded: true, failed: false })
+  }, [])
+  const handleCoverError = useCallback(() => {
+    setCoverState({ url: coverUrlRef.current, loaded: false, failed: true })
+  }, [])
   const prevColorRef = useRef<string | null>(null)
   useEffect(() => {
     if (!dominant) return
@@ -303,23 +335,25 @@ function TVPlayer({ componentId }: { componentId: string }) {
       dockOverlay: {
         left: offsetX + s(48),
         right: offsetX + s(48),
-        top: offsetY + s(538),
+        top: offsetY + s(512),
         bottom: 0,
       },
       dockControls: {
-        right: s(80),
-        top: -s(26),
+        left: 0,
+        right: 0,
+        top: s(40),
+        marginTop: 0,
+        alignItems: 'center',
       },
       controlSmall: Math.max(34, s(42)),
       controlPrimary: Math.max(42, s(52)),
+      backSize: Math.max(34, s(42)),
       backdropBlur: 34,
       backdropInsetX: s(160),
       backdropInsetY: s(130),
       edgeInset: Math.max(0, offsetX),
     }
   }, [screenHeight, screenWidth])
-
-  useTVNavigationBack(componentId)
 
   const scheduleHideControls = useCallback(() => {
     hideDeadlineRef.current = Date.now() + 5000
@@ -340,6 +374,88 @@ function TVPlayer({ componentId }: { componentId: string }) {
     controlFocusCountRef.current = Math.max(0, controlFocusCountRef.current - 1)
     revealControls()
   }, [revealControls])
+
+  const handleBack = useTVNavigationBack(componentId)
+
+  // 进度条 seek：聚焦进度条时，左右键（含长按重复）按步长拖动进度。
+  // 短按 5s、长按重复每次 1s（10s 一档在长按 50ms 的重复率下会一松手就跳几分钟）。
+  // 实际 seekTo 做 150ms 节流，避免按住拖动时每个按键都让播放器重新取流；
+  // 松手（UP）和焦点离开时补一次最终落位。
+  const SEEK_STEP = 5000 // ms：单次短按
+  const SEEK_REPEAT_STEP = 1000 // ms：长按重复
+  const lastSeekAtRef = useRef(0)
+  const seekDirtyRef = useRef(false)
+  const commitSeekRef = useRef<(force?: boolean) => void>(() => {})
+  commitSeekRef.current = (force = false) => {
+    const now = Date.now()
+    if (!force && now - lastSeekAtRef.current < 150) return
+    lastSeekAtRef.current = now
+    void setCurrentTime(previewTimeRef.current / 1000)
+  }
+  const seekFnRef = useRef<(dir: -1 | 1, repeat: boolean) => void>(() => {})
+  seekFnRef.current = (dir: -1 | 1, repeat: boolean) => {
+    const max = progress.maxPlayTime
+    if (!max) return
+    const step = repeat ? SEEK_REPEAT_STEP : SEEK_STEP
+    const t = Math.max(0, Math.min(previewTimeRef.current + dir * step, max))
+    previewTimeRef.current = t
+    const percent = (t / max) * 100
+    setSeekPreview({ percent, time: formatPlayTime2(Math.trunc(t / 1000)) })
+    seekDirtyRef.current = true
+    commitSeekRef.current()
+  }
+  const handleSeekFocusChange = useCallback((focused: boolean) => {
+    // 去重：控制栏卸载时下面 effect 会先复位 ref，随后晚到的 onBlur 不能再减一次计数
+    if (seekFocusedRef.current === focused) return
+    seekFocusedRef.current = focused
+    controlFocusTimeRef.current = Date.now()
+    if (focused) {
+      // 进度条也算「控制栏内的焦点」：UP 键的处理会按 count 判断是否把焦点抢回播放键，
+      // 不记账的话按上键落到进度条后会被立刻拽回播放键，进度条永远拖不动。
+      controlFocusCountRef.current += 1
+      revealControls()
+      const max = progress.maxPlayTime
+      const t = progress.nowPlayTime
+      previewTimeRef.current = t
+      seekDirtyRef.current = false
+      setSeekPreview({ percent: max ? (t / max) * 100 : 0, time: formatPlayTime2(Math.trunc(t / 1000)) })
+    } else {
+      controlFocusCountRef.current = Math.max(0, controlFocusCountRef.current - 1)
+      // 焦点离开前把最后一次拖动位置真正落位（节流窗口内可能还没提交）
+      if (seekDirtyRef.current) {
+        seekDirtyRef.current = false
+        commitSeekRef.current(true)
+      }
+      setSeekPreview(null)
+    }
+  }, [progress.nowPlayTime, progress.maxPlayTime, revealControls])
+
+  useEffect(() => {
+    if (!getCachedIsTV()) return
+    return onTVRemoteEvent(({ eventType, eventKeyAction, repeatCount }) => {
+      if (!seekFocusedRef.current) return
+      if (eventType !== 'left' && eventType !== 'right') return
+      if (eventKeyAction === 1) {
+        // 松手：把节流期间的最后位置补一次
+        if (seekDirtyRef.current) commitSeekRef.current(true)
+        return
+      }
+      if (eventKeyAction !== 0) return
+      seekFnRef.current(eventType === 'left' ? -1 : 1, (repeatCount ?? 0) > 0)
+    })
+  }, [])
+
+  // 控制栏隐藏（听歌模式）时进度条已卸载，强制复位 seek 聚焦状态并归还焦点计数，
+  // 避免残留的 count 让之后呼出控制栏时 focusPlayAfterReveal 永远不生效
+  useEffect(() => {
+    if (!showControls) {
+      if (seekFocusedRef.current) {
+        seekFocusedRef.current = false
+        controlFocusCountRef.current = Math.max(0, controlFocusCountRef.current - 1)
+      }
+      setSeekPreview(null)
+    }
+  }, [showControls])
 
   // 状态栏常驻开关：开启时控制栏一直显示，关闭时回到 5 秒后自动隐藏。
   const toggleControlsPin = useCallback(() => {
@@ -369,6 +485,9 @@ function TVPlayer({ componentId }: { componentId: string }) {
   // 引擎「不抢活焦点」守卫拦住（焦点在隐形歌词区）——补偿必须推迟到渲染完成后。
   // 焦点已在控制栏按钮上时不抢（count>0 说明用户正操作按钮，交给按钮自身导航）
   const focusPlayAfterReveal = useCallback(() => {
+    // 焦点已在进度条上时绝不抢：否则「按上键 → 方向键 DOWN 把焦点移到进度条 →
+    // 同一个按键的 UP 又把焦点拽回播放键」，进度条永远停不住、也拖不了。
+    if (seekFocusedRef.current) return
     if (controlFocusCountRef.current > 0) return
     // 4K 电视渲染慢时 dock 可能 >2 帧才挂载，RAF×2 会落空；500ms 内轮询重试
     let tries = 0
@@ -386,10 +505,10 @@ function TVPlayer({ componentId }: { componentId: string }) {
 
   useTVRemoteActions({
     playPause: () => { if (musicInfo.id) togglePlay() },
-    previous: () => { if (musicInfo.id) void playPrev() },
-    rewind: () => { if (musicInfo.id) void playPrev() },
-    next: () => { if (musicInfo.id) void playNext() },
-    fastForward: () => { if (musicInfo.id) void playNext() },
+    previous: () => { if (seekFocusedRef.current) return; if (musicInfo.id) void playPrev() },
+    rewind: () => { if (seekFocusedRef.current) return; if (musicInfo.id) void playPrev() },
+    next: () => { if (seekFocusedRef.current) return; if (musicInfo.id) void playNext() },
+    fastForward: () => { if (seekFocusedRef.current) return; if (musicInfo.id) void playNext() },
     stop: () => { if (musicInfo.id && isPlay) togglePlay() },
     down: () => { revealControls(); focusPlayAfterReveal() },
     up: () => { revealControls(); focusPlayAfterReveal() },
@@ -410,6 +529,7 @@ function TVPlayer({ componentId }: { componentId: string }) {
       const isSelectKey = eventType === 'select'
       if (!isSeekKey && !isSelectKey) return
       if (!musicInfo.id) return
+      if (seekFocusedRef.current) return // 进度条聚焦时左右键改走 seek，不在此处理切歌
       if (controlFocusCountRef.current > 0) return
       // 控制栏显示时，OK/方向键全部交给焦点所在按钮处理，绝不全局播放/暂停
       // （防「看着下载/常驻按钮、焦点却在播放键」导致的盲触发；按钮本身功能独立）
@@ -446,10 +566,25 @@ function TVPlayer({ componentId }: { componentId: string }) {
     })
   }, [musicInfo.id, revealControls, showControls])
 
+  // 本地歌曲的歌词要现去在线多源匹配，慢的时候要十几秒；没网时底层要等好几个
+  // 12s 超时才 reject，用户看到的就是「加载中」一直转。这里 12s 还没结果就先按
+  // 「暂无歌词」显示，之后歌词真的到了会自动覆盖，不会再无限等。
+  const [lyricWaitExpired, setLyricWaitExpired] = useState(false)
+  useEffect(() => {
+    setLyricWaitExpired(false)
+    if (!musicInfo.id || musicInfo.lrc != null) return
+    const timer = setTimeout(() => { setLyricWaitExpired(true) }, 12000)
+    return () => { clearTimeout(timer) }
+  }, [musicInfo.id, musicInfo.lrc])
+  const lyricLoaded = musicInfo.lrc != null
   const activeLyricIndex = lyricPlay.line >= 0 && lyricPlay.line < lyricLines.length ? lyricPlay.line : -1
-  const fallbackLyric = isDisplayLyric(lyricPlay.text) ? lyricPlay.text.trim() : (musicInfo.id ? tvText.loading : tvText.chooseSongFirst)
+  let fallbackLyric: string
+  if (isDisplayLyric(lyricPlay.text)) fallbackLyric = lyricPlay.text.trim()
+  else if (!musicInfo.id) fallbackLyric = tvText.chooseSongFirst
+  else if (lyricLoaded || lyricWaitExpired) fallbackLyric = tvText.noLyric
+  else fallbackLyric = tvText.loading
   const displayLyrics = useMemo(() => {
-    if (activeLyricIndex < 0 || !lyricLines.length) return [{ key: 'fallback', text: fallbackLyric, translation: '', active: true, distance: 0 }]
+    if (activeLyricIndex < 0 || !lyricLines.length) return [{ key: 'fallback', text: fallbackLyric, translation: '', active: true, distance: 0, isFallback: true }]
 
     const currentItem = lyricLines[activeLyricIndex]
     const seekLine = (direction: -1 | 1, step: number) => {
@@ -484,8 +619,25 @@ function TVPlayer({ componentId }: { componentId: string }) {
       distance: Math.min(Math.abs(index - activeLyricIndex), 3),
     })).filter((item, index, list) => item.text && list.findIndex(target => target.key === item.key) === index)
 
-    return nextLyrics.length ? nextLyrics : [{ key: 'fallback', text: fallbackLyric, translation: '', active: true, distance: 0 }]
+    return nextLyrics.length ? nextLyrics : [{ key: 'fallback', text: fallbackLyric, translation: '', active: true, distance: 0, isFallback: true }]
   }, [activeLyricIndex, fallbackLyric, lyricLines])
+
+  // 歌词加载占位呼吸动画：无歌词数据时用「加载中」占位，做个轻微呼吸透明度，
+  // 既不像报错也不像静止死字（仅加载态呼吸，「暂无歌词」保持静止）
+  const breatheAnim = useRef(new Animated.Value(0)).current
+  const isLoadingFallback = fallbackLyric === tvText.loading
+  useEffect(() => {
+    if (!isLoadingFallback) return
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(breatheAnim, { toValue: 1, duration: 900, useNativeDriver: true }),
+        Animated.timing(breatheAnim, { toValue: 0, duration: 900, useNativeDriver: true }),
+      ]),
+    )
+    loop.start()
+    return () => { loop.stop() }
+  }, [isLoadingFallback, breatheAnim])
+  const fallbackOpacity = breatheAnim.interpolate({ inputRange: [0, 1], outputRange: [0.42, 0.9] })
 
   const handleTogglePlay = useCallback(() => {
     if (!musicInfo.id) return
@@ -516,15 +668,35 @@ function TVPlayer({ componentId }: { componentId: string }) {
         <TVFadeOverlay height={tvSize(300)} peak={0.34} direction="up" />
       </View>
       <View style={styles.root}>
+        <Focusable
+          ref={backFocus.ref as any}
+          style={[styles.backButton, { width: appleLayout.backSize, height: appleLayout.backSize, borderRadius: appleLayout.backSize / 2 }]}
+          focusStyle={[styles.backButtonFocus, { width: appleLayout.backSize, height: appleLayout.backSize, borderRadius: appleLayout.backSize / 2 }]}
+          onTVFocusChange={setBackFocused}
+          onPress={handleBack}
+          accessibilityLabel={tvText.back}
+          nextFocusDown={playFocus.getNodeHandle() ?? undefined}
+          nextFocusRight={lyricFocus.getNodeHandle() ?? undefined}
+        >
+          <Icon
+            name="back-2"
+            rawSize={Math.round(appleLayout.backSize * 0.46)}
+            color={backFocused ? tvColors.bgDeep : 'rgba(255,255,255,0.82)'}
+            style={styles.backIcon}
+          />
+        </Focusable>
         <View style={styles.nowPlayingArea}>
           <View style={[styles.albumColumn, appleLayout.albumColumn]}>
             <View style={[styles.coverStage, appleLayout.coverStage]}>
               <View style={[styles.coverGlow, appleLayout.coverGlow]} />
-              <View style={[styles.coverWrap, appleLayout.coverWrap]}>
-                <View style={[styles.cover, appleLayout.cover]}>
-                  {musicInfo.pic ? <Image url={musicInfo.pic} resizeMode="cover" style={styles.coverImage as ImageStyle} /> : <TVText variant="pageTitle">zl</TVText>}
+              {!coverReady ? <TVVinylRecord isPlaying={showAsPlaying && !!musicInfo.id} size={appleLayout.coverStage.width} style={styles.coverVinyl} /> : null}
+              {coverUrl ? (
+                <View style={[styles.coverWrap, appleLayout.coverWrap, !coverReady && styles.coverPending]}>
+                  <View style={[styles.cover, appleLayout.cover]}>
+                    <Image url={coverUrl} resizeMode="cover" style={styles.coverImage as ImageStyle} onLoad={handleCoverLoad} onError={handleCoverError} />
+                  </View>
                 </View>
-              </View>
+              ) : null}
             </View>
             <View style={[styles.songIdentity, appleLayout.songIdentity]}>
               <TVText variant="pageTitle" style={[styles.songTitle, appleLayout.songTitle]} numberOfLines={2}>{musicInfo.name || tvText.welcome}</TVText>
@@ -550,25 +722,30 @@ function TVPlayer({ componentId }: { componentId: string }) {
               nextFocusRight={showControls ? nextFocus.getNodeHandle() ?? lyricSelfHandle : lyricSelfHandle}
             >
               <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.lyricContent, appleLayout.lyricContent]} scrollEnabled={false}>
-                {displayLyrics.map(item => (
-                  <View key={item.key} style={[styles.lyricRow, item.active ? styles.lyricRowActive : null]}>
-                    <TVText
-                      variant={item.active ? 'pageTitle' : 'sectionTitle'}
-                      style={[
-                        styles.lyricText,
-                        item.active
-                          ? [styles.lyricTextActive, appleLayout.lyricTextActive]
-                          : item.distance > 1
-                            ? [styles.lyricTextFar, appleLayout.lyricTextFar]
-                            : [styles.lyricTextNear, appleLayout.lyricTextNear],
-                      ]}
-                      numberOfLines={2}
-                    >
-                      {item.text}
-                    </TVText>
-                    {item.active && item.translation ? <TVText variant="body" style={[styles.translation, appleLayout.translation]} numberOfLines={1}>{item.translation}</TVText> : null}
-                  </View>
-                ))}
+                {displayLyrics.map(item => {
+                  const isFallback = (item as { isFallback?: boolean }).isFallback === true
+                  return (
+                    <Animated.View key={item.key} style={[styles.lyricRow, isFallback ? styles.lyricRowFallback : (item.active ? styles.lyricRowActive : null), isFallback ? { opacity: fallbackOpacity } : null]}>
+                      <TVText
+                        variant={isFallback ? 'body' : (item.active ? 'pageTitle' : 'sectionTitle')}
+                        style={[
+                          styles.lyricText,
+                          isFallback
+                            ? styles.lyricFallbackText
+                            : item.active
+                              ? [styles.lyricTextActive, appleLayout.lyricTextActive]
+                              : item.distance > 1
+                                ? [styles.lyricTextFar, appleLayout.lyricTextFar]
+                                : [styles.lyricTextNear, appleLayout.lyricTextNear],
+                        ]}
+                        numberOfLines={2}
+                      >
+                        {item.text}
+                      </TVText>
+                      {!isFallback && item.active && item.translation ? <TVText variant="body" style={[styles.translation, appleLayout.translation]} numberOfLines={1}>{item.translation}</TVText> : null}
+                    </Animated.View>
+                  )
+                })}
               </ScrollView>
             </Focusable>
           </View>
@@ -593,7 +770,7 @@ function TVPlayer({ componentId }: { componentId: string }) {
         ) : null}
         {showControls ? (
           <View style={[styles.dockOverlay, appleLayout.dockOverlay]}>
-            <TVNowPlayingDock progressPercent={progressPercent} now={progress.nowPlayTimeStr || '00:00'} total={progress.maxPlayTimeStr || '00:00'} style={styles.dock} controlsStyle={appleLayout.dockControls}>
+            <TVNowPlayingDock progressPercent={progressPercent} now={progress.nowPlayTimeStr || '00:00'} total={progress.maxPlayTimeStr || '00:00'} style={styles.dock} controlsStyle={appleLayout.dockControls} seekPreview={seekPreview} onSeekFocusChange={handleSeekFocusChange}>
             <View style={styles.primaryControls}>
               <TVRoundControl ref={modeFocus.ref as any} label={getPlayModeName(playMode)} iconName={getPlayModeIconName(playMode)} size={appleLayout.controlSmall} onPress={togglePlayMode} onFocus={handleControlFocus} onBlur={handleControlBlur} accessibilityLabel={getPlayModeName(playMode)} nextFocusRight={prevFocus.getNodeHandle() ?? undefined} />
               <TVRoundControl ref={prevFocus.ref as any} label={tvText.controlPrev} iconName="prevMusic" size={appleLayout.controlSmall} onPress={() => { revealControls(); void playPrev() }} onFocus={handleControlFocus} onBlur={handleControlBlur} accessibilityLabel={tvText.controlPrev} nextFocusLeft={modeFocus.getNodeHandle() ?? undefined} nextFocusRight={playFocus.getNodeHandle() ?? undefined} />
@@ -702,6 +879,11 @@ const styles: Record<string, ViewStyle | TextStyle | ImageStyle | any> = {
   dockStateText: { color: tvColors.primaryHigh, fontWeight: '800' },
   albumColumn: { position: 'absolute', justifyContent: 'center' },
   coverStage: { justifyContent: 'center' },
+  // 黑胶占满封面位；海报没加载出来时盖在上面，加载完成后卸掉
+  coverVinyl: { position: 'absolute', left: 0, top: 0 },
+  // 海报仍挂在树上等 onLoad（卸载就永远不会加载完），先透明占位；
+  // 同时去掉阴影/海拔，否则安卓会在黑胶周围留一圈方形投影
+  coverPending: { opacity: 0, shadowOpacity: 0, elevation: 0 },
   coverGlow: {
     position: 'absolute',
     width: 280,
@@ -828,6 +1010,8 @@ const styles: Record<string, ViewStyle | TextStyle | ImageStyle | any> = {
   lyricContent: { flexGrow: 1, justifyContent: 'center', paddingTop: 0, paddingBottom: 0 },
   lyricRow: { marginVertical: 3, opacity: 0.42 },
   lyricRowActive: { opacity: 1, marginVertical: 11 },
+  lyricRowFallback: { opacity: 1, marginVertical: 0 },
+  lyricFallbackText: { color: tvColors.lyricDim, fontWeight: '700' },
   lyricText: { textAlign: 'left' },
   fsLyricsRoot: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, zIndex: 40, elevation: 40, backgroundColor: 'rgba(4,5,9,0.96)', justifyContent: 'center', paddingHorizontal: tvSize(90) },
   fsLyricsContent: { flexGrow: 1, justifyContent: 'center', gap: tvSize(16), paddingVertical: tvSize(40) },
@@ -840,6 +1024,26 @@ const styles: Record<string, ViewStyle | TextStyle | ImageStyle | any> = {
   translation: { marginTop: 6, color: tvColors.primaryHigh },
   dock: { paddingHorizontal: 0, paddingBottom: 0, marginTop: 0 },
   primaryControls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 24, marginTop: 18 },
+  backButton: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    zIndex: 35,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // tvOS 焦点范式：默认是「裸」箭头，聚焦时变实心白圆 + 图标反黑 + 轻微放大，
+  // 不用描边/发光描边（那是 web 按钮的语言，不是 tvOS 的）
+  backButtonFocus: {
+    backgroundColor: '#FFFFFF',
+    transform: [{ scale: 1.08 }],
+    shadowColor: '#000000',
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
+  },
+  backIcon: { includeFontPadding: false, textAlign: 'center' },
 }
 
 export default memo(TVPlayer)

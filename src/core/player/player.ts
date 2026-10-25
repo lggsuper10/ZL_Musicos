@@ -153,6 +153,22 @@ export const setMusicUrl = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem
   })
 }
 
+/**
+ * 歌词拉取失败时，把「没有歌词」这个结果写回播放状态。
+ *
+ * 以前失败路径只 setStatusText('歌词获取失败')：musicInfo.lrc 仍然是 null，
+ * 而播放页用 lrc != null 判断歌词是否加载完，于是本地歌曲（音频没内嵌歌词、
+ * 没有同名 .lrc、在线又匹配不到时）会一直停在「加载中」，看起来像永远拉不下来。
+ * 落一个空歌词后 UI 就能显示「暂无歌词」，用户不会再把「确实没有歌词」当成卡住。
+ */
+const markLyricUnavailable = (musicInfo: { id: string | number }) => {
+  if (String(musicInfo.id) != String(playerState.playMusicInfo.musicInfo?.id)) return
+  // 刷新歌词失败时不要清掉已经显示的歌词
+  if (playerState.musicInfo.lrc != null) return
+  setMusicInfo({ lrc: '', tlrc: '', lxlrc: '', rlrc: '', rawlrc: '' })
+  global.app_event.lyricUpdated()
+}
+
 // 恢复上次播放的状态
 const handleRestorePlay = async(restorePlayInfo: LX.Player.SavedPlayInfo) => {
   const musicInfo = playerState.playMusicInfo.musicInfo
@@ -190,6 +206,7 @@ const handleRestorePlay = async(restorePlayInfo: LX.Player.SavedPlayInfo) => {
     console.log(err)
     if (musicInfo.id != playMusicInfo.musicInfo?.id) return
     setStatusText(global.i18n.t('lyric__load_error'))
+    markLyricUnavailable(musicInfo)
   })
 
   if (settingState.setting['player.togglePlayMethod'] == 'random' && !playMusicInfo.isTempPlay) addPlayedList(playMusicInfo as LX.Player.PlayMusicInfo)
@@ -222,6 +239,7 @@ const debouncePlay = debounceBackgroundTimer((musicInfo: LX.Player.PlayMusic) =>
     console.log(err)
     if (musicInfo.id != playerState.playMusicInfo.musicInfo?.id) return
     setStatusText(global.i18n.t('lyric__load_error'))
+    markLyricUnavailable(musicInfo)
   })
 }, 200)
 

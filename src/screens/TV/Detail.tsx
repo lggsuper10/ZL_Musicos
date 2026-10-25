@@ -28,7 +28,7 @@ import { toast } from '@/utils/tools'
 import settingState from '@/store/setting/state'
 import TVDownloadPanel from '@/components/TV/TVDownloadPanel'
 import TVChooseDownload from '@/components/TV/TVChooseDownload'
-import { LIST_IDS } from '@/config/constant'
+import { DOWNLOAD_LIST_ID, LIST_IDS } from '@/config/constant'
 import type { TVDetailPayload } from './types'
 import { dot, tvText } from './labels'
 import { createTVTabs, getSourceName } from './utils'
@@ -271,6 +271,9 @@ function TVDetail({ componentId, payload }: Props) {
   // 注意 currentId 不传：Detail 不是任何 tab 页本身，六个 tab 在这里都必须可用（一键跳转），
   // 传了会把对应 tab 挡成 no-op
   const activeTabId = payload.type === 'board' ? 'new' : payload.type === 'userlist' ? 'mylist' : 'home'
+  // 「本地歌曲」是下载完成的歌自动汇入的固定歌单：整张列表里没有可下载的在线歌曲，
+  // 这行留个「选择下载」只会点出一句「不支持下载」，直接不渲染（老板 10-25 需求）。
+  const isLocalSongsList = payload.type === 'userlist' && payload.id === DOWNLOAD_LIST_ID
 
   return (
     <TVAppleScaffold image={image} immersive contentStyle={styles.scaffoldContent}>
@@ -289,33 +292,43 @@ function TVDetail({ componentId, payload }: Props) {
             </View>
             <TVText variant="pageTitle" style={styles.title} numberOfLines={2}>{payload.title}</TVText>
             <TVText variant="meta" style={styles.desc} numberOfLines={3}>{payload.subtitle ?? (payload.type === 'songlist' ? payload.songlist.desc : tvText.selectedListDesc)}</TVText>
+            {/* tvOS 式操作行：主 CTA(白底) + 次操作(玻璃)，随 Hero 垂直居中；wrap 兜底永不溢出 */}
             <View style={styles.actions}>
               <TVButton
                 ref={playAllFocus.ref as any}
                 label={loading ? tvText.loading : tvText.playAll}
-                tone="dark"
+                tone="primary"
                 style={styles.actionButton}
                 onPress={() => { void handlePlay(0) }}
                 onFocus={handleActionFocus}
                 onBlur={handleActionBlur}
                 hasTVPreferredFocus
                 nextFocusUp={getActiveTabHandle() ?? undefined}
-                nextFocusRight={downloadAllFocus.getNodeHandle() ?? undefined}
+                nextFocusRight={isLocalSongsList ? downloadManageFocus.getNodeHandle() ?? undefined : downloadAllFocus.getNodeHandle() ?? undefined}
                 nextFocusDown={firstRowFocus.getNodeHandle() ?? undefined}
               />
-              <TVButton
-                ref={downloadAllFocus.ref as any}
-                label={tvText.selectDownload}
-                tone="dark"
-                style={styles.actionButton}
-                onPress={() => { setShowChooseDownload(true) }}
-                onFocus={handleActionFocus}
-                onBlur={handleActionBlur}
-                nextFocusUp={getActiveTabHandle() ?? undefined}
-                nextFocusLeft={playAllFocus.getNodeHandle() ?? undefined}
-                nextFocusRight={downloadManageFocus.getNodeHandle() ?? undefined}
-                nextFocusDown={firstRowFocus.getNodeHandle() ?? undefined}
-              />
+              {!isLocalSongsList ? (
+                <TVButton
+                  ref={downloadAllFocus.ref as any}
+                  label={tvText.selectDownload}
+                  tone="dark"
+                  style={styles.actionButton}
+                  onPress={() => {
+                    // 列表里万一没有在线歌曲（用户自建歌单混入本地歌），弹提示而不是打开空面板
+                    if (!list.some(m => m.source !== 'local')) {
+                      setLocalDialog({ title: tvText.selectDownload, message: tvText.downloadNoOnlineTip, buttons: [{ label: tvText.cancelAction, tone: 'dark' }] })
+                      return
+                    }
+                    setShowChooseDownload(true)
+                  }}
+                  onFocus={handleActionFocus}
+                  onBlur={handleActionBlur}
+                  nextFocusUp={getActiveTabHandle() ?? undefined}
+                  nextFocusLeft={playAllFocus.getNodeHandle() ?? undefined}
+                  nextFocusRight={downloadManageFocus.getNodeHandle() ?? undefined}
+                  nextFocusDown={firstRowFocus.getNodeHandle() ?? undefined}
+                />
+              ) : null}
               <TVButton
                 ref={downloadManageFocus.ref as any}
                 label={tvText.downloadManage}
@@ -325,7 +338,7 @@ function TVDetail({ componentId, payload }: Props) {
                 onFocus={handleActionFocus}
                 onBlur={handleActionBlur}
                 nextFocusUp={getActiveTabHandle() ?? undefined}
-                nextFocusLeft={downloadAllFocus.getNodeHandle() ?? undefined}
+                nextFocusLeft={isLocalSongsList ? playAllFocus.getNodeHandle() ?? undefined : downloadAllFocus.getNodeHandle() ?? undefined}
                 nextFocusRight={backFocus.getNodeHandle() ?? undefined}
                 nextFocusDown={firstRowFocus.getNodeHandle() ?? undefined}
               />
@@ -469,9 +482,9 @@ const styles: Record<string, ViewStyle | TextStyle | ImageStyle | any> = {
   kicker: { flexShrink: 1 },
   title: { marginTop: tvSize(14), lineHeight: tvFont(42), fontSize: tvFont(36) },
   desc: { marginTop: tvSize(12), lineHeight: tvFont(22), color: tvColors.subtext },
-  actions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-start', flexWrap: 'nowrap', gap: tvSize(12), marginTop: tvSize(20) },
-  actionButton: { minWidth: tvSize(118), minHeight: tvSize(50), paddingHorizontal: tvSize(18), paddingVertical: tvSize(12) },
-  backButton: { minWidth: tvSize(88), minHeight: tvSize(50), paddingHorizontal: tvSize(18), paddingVertical: tvSize(12) },
+  actions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-start', gap: tvSize(12), maxWidth: '100%', marginTop: tvSize(24) },
+  actionButton: { minWidth: tvSize(100), minHeight: tvSize(50), paddingHorizontal: tvSize(18), paddingVertical: tvSize(12) },
+  backButton: { minWidth: tvSize(80), minHeight: tvSize(50), paddingHorizontal: tvSize(18), paddingVertical: tvSize(12) },
   // 只用一条竖向细线分隔两栏，不再用整块玻璃面板框住列表
   listPanel: {
     width: '44%',

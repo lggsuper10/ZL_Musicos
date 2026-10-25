@@ -34,6 +34,7 @@ export const tvText = {
   builtinSource: '\u5185\u7f6e\u97f3\u6e90',
   preset: '\u9884\u7f6e',
   loading: '\u52a0\u8f7d\u4e2d',
+  noLyric: '\u6682\u65e0\u6b4c\u8bcd',
   loadingContent: '\u6b63\u5728\u52a0\u8f7d\u63a8\u8350\u5185\u5bb9',
   loadFailed: '\u52a0\u8f7d\u5931\u8d25',
   contentLoadFailed: '\u5185\u5bb9\u52a0\u8f7d\u5931\u8d25',
@@ -222,6 +223,7 @@ export const tvText = {
   downloadQuality320k: '\u9ad8\u8d28\u91cf',
   downloadQuality128k: '\u6807\u51c6',
   downloadQualityNone: '\u8be5\u6b4c\u66f2\u6682\u65e0\u53ef\u4e0b\u8f7d\u97f3\u8d28',
+  downloadNoOnlineTip: '本地歌曲不支持下载，当前列表中没有可下载的在线歌曲',
   // 改名时目标歌单已被删除（找不到原条目）
   songlistMissing: '\u8fd9\u4e2a\u6b4c\u5355\u5df2\u7ecf\u4e0d\u5b58\u5728\u4e86',
 } as const
