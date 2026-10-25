@@ -24,6 +24,7 @@ export const extname = (name: string) => name.lastIndexOf('.') > 0 ? name.substr
 
 export const temporaryDirectoryPath = Dirs.CacheDir
 export const externalStorageDirectoryPath = Dirs.SDCardDir
+export const appExternalStorageDirectoryPath = RNFS.ExternalDirectoryPath
 export const privateStorageDirectoryPath = Dirs.DocumentDir
 
 export const getExternalStoragePaths = async(is_removable?: boolean) => _getExternalStoragePaths(is_removable)

@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type Component
 import { BackHandler, Image, ScrollView, View, findNodeHandle, type TextStyle, type ViewStyle } from 'react-native'
 import TVAppleScaffold from '@/components/TV/TVAppleScaffold'
 import TVTopTabs from '@/components/TV/TVTopTabs'
+import TVDownloadPanel from '@/components/TV/TVDownloadPanel'
 import TVText from '@/components/TV/TVText'
 import TVButton from '@/components/TV/TVButton'
 import { showTVDialog, type TVDialogButtonConfig } from '@/components/TV/TVDialog'
@@ -582,9 +583,12 @@ function TVSettings({ componentId }: { componentId: string }) {
     showTVDialog({ title: src.name, message: '选择要执行的操作', buttons })
   }
 
+  const [showDownloadPanel, setShowDownloadPanel] = useState(false)
+
   return (
     <TVAppleScaffold image={musicInfo.pic}>
-      <TVTopTabs items={createTVTabs(componentId, 'settings')} activeId="settings" nextFocusDown={firstSourceFocus.getNodeHandle() ?? lanButtonFocus.getNodeHandle() ?? undefined} activeTabRef={activeTabFocus} onActiveTabReady={settingsFocusRefresh} />
+      <TVTopTabs items={createTVTabs(componentId, 'settings')} activeId="settings" nextFocusDown={firstSourceFocus.getNodeHandle() ?? lanButtonFocus.getNodeHandle() ?? undefined} activeTabRef={activeTabFocus} onActiveTabReady={settingsFocusRefresh} onDownloadPress={() => setShowDownloadPanel(true)} />
+      <TVDownloadPanel visible={showDownloadPanel} onClose={() => setShowDownloadPanel(false)} />
       <View style={styles.root}>
         <View style={styles.pageHeader}>
           <TVText variant="pageTitle" style={styles.pageTitle}>{tvText.settings}</TVText>

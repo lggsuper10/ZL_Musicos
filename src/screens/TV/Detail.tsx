@@ -277,7 +277,7 @@ function TVDetail({ componentId, payload }: Props) {
 
   return (
     <TVAppleScaffold image={image} immersive contentStyle={styles.scaffoldContent}>
-      <TVTopTabs items={createTVTabs(componentId)} activeId={activeTabId} subtitle={tvText.detailSubtitle} nextFocusDown={playAllFocus.getNodeHandle() ?? undefined} activeTabRef={activeTabFocus} onActiveTabReady={queueFocusRefresh} />
+      <TVTopTabs items={createTVTabs(componentId)} activeId={activeTabId} subtitle={tvText.detailSubtitle} nextFocusDown={playAllFocus.getNodeHandle() ?? undefined} activeTabRef={activeTabFocus} onActiveTabReady={queueFocusRefresh} onDownloadPress={() => setShowDownloadPanel(true)} />
       <View style={styles.root}>
         <View style={styles.stage}>
           <View style={styles.coverStage}>

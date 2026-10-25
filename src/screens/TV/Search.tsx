@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type Component
 import { FlatList, ScrollView, TextInput, View, findNodeHandle, type TextInputProps, type TextStyle, type ViewStyle } from 'react-native'
 import TVAppleScaffold from '@/components/TV/TVAppleScaffold'
 import TVTopTabs from '@/components/TV/TVTopTabs'
+import TVDownloadPanel from '@/components/TV/TVDownloadPanel'
 import TVText from '@/components/TV/TVText'
 import TVButton from '@/components/TV/TVButton'
 import TVMusicRow from '@/components/TV/TVMusicRow'
@@ -283,9 +284,12 @@ function TVSearch({ componentId }: { componentId: string }) {
     return getChipHandleAt(chipIndex) ?? lastHotHandle
   })
 
+  const [showDownloadPanel, setShowDownloadPanel] = useState(false)
+
   return (
     <TVAppleScaffold image={musicInfo.pic}>
-      <TVTopTabs items={createTVTabs(componentId, 'search')} activeId="search" nextFocusDown={getInputHandle() ?? searchButtonHandle} activeTabRef={activeTabFocus} onActiveTabReady={queueFocusRefresh} />
+      <TVTopTabs items={createTVTabs(componentId, 'search')} activeId="search" nextFocusDown={getInputHandle() ?? searchButtonHandle} activeTabRef={activeTabFocus} onActiveTabReady={queueFocusRefresh} onDownloadPress={() => setShowDownloadPanel(true)} />
+      <TVDownloadPanel visible={showDownloadPanel} onClose={() => setShowDownloadPanel(false)} />
       <View style={styles.root}>
         <View style={styles.leftColumn}>
           <View style={styles.pageHeader}>

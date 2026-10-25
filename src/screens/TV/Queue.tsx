@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type Component
 import { FlatList, View, useWindowDimensions, findNodeHandle, type ImageStyle, type TextStyle, type ViewStyle } from 'react-native'
 import TVAppleScaffold from '@/components/TV/TVAppleScaffold'
 import TVTopTabs from '@/components/TV/TVTopTabs'
+import TVDownloadPanel from '@/components/TV/TVDownloadPanel'
 import TVText from '@/components/TV/TVText'
 import TVButton from '@/components/TV/TVButton'
 import TVFadeOverlay from '@/components/TV/TVFadeOverlay'
@@ -330,9 +331,12 @@ function TVQueue({ componentId }: { componentId: string }) {
     <View style={[styles.rowDivider, { height: z(tvSize(1)), marginHorizontal: z(tvSize(14)) }]} />
   ), [z])
 
+  const [showDownloadPanel, setShowDownloadPanel] = useState(false)
+
   return (
     <TVAppleScaffold image={currentMusicInfo.pic}>
-      <TVTopTabs items={createTVTabs(componentId, 'queue')} activeId="queue" nextFocusDown={playModeFocus.getNodeHandle() ?? firstQueueFocus.getNodeHandle() ?? undefined} activeTabRef={activeTabFocus} onActiveTabReady={tabRefresh} />
+      <TVTopTabs items={createTVTabs(componentId, 'queue')} activeId="queue" nextFocusDown={playModeFocus.getNodeHandle() ?? firstQueueFocus.getNodeHandle() ?? undefined} activeTabRef={activeTabFocus} onActiveTabReady={tabRefresh} onDownloadPress={() => setShowDownloadPanel(true)} />
+      <TVDownloadPanel visible={showDownloadPanel} onClose={() => setShowDownloadPanel(false)} />
       <View style={styles.root} onLayout={(e: any) => {
         const height = Math.round(e.nativeEvent.layout.height)
         if (height < 120) return

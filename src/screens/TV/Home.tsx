@@ -2,16 +2,18 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type Component
 import { ScrollView, View, useWindowDimensions, findNodeHandle, type ViewStyle } from 'react-native'
 import TVAppleScaffold from '@/components/TV/TVAppleScaffold'
 import TVTopTabs from '@/components/TV/TVTopTabs'
+import TVDownloadPanel from '@/components/TV/TVDownloadPanel'
 import TVHeroShelf from '@/components/TV/TVHeroShelf'
 import TVPlayingBars from '@/components/TV/TVPlayingBars'
 import TVShelf from '@/components/TV/TVShelf'
 import TVPosterCard from '@/components/TV/TVPosterCard'
 import TVButton from '@/components/TV/TVButton'
+import TVRoundControl from '@/components/TV/TVRoundControl'
 import type Focusable from '@/components/TV/Focusable'
 import { tvColors, tvSize } from '@/theme/tv'
 import { setComponentId } from '@/core/common'
 import { COMPONENT_IDS } from '@/config/constant'
-import { togglePlay } from '@/core/player/player'
+import { togglePlay, playPrev, playNext } from '@/core/player/player'
 import { useIsPlay, usePlayerMusicInfo } from '@/store/player/hook'
 import { getList as getSonglist } from '@/core/songlist'
 import songlistState, { type ListInfoItem } from '@/store/songlist/state'
@@ -38,6 +40,8 @@ function TVHome({ componentId }: { componentId: string }) {
   const [exitConfirmVisible, setExitConfirmVisible] = useState(false)
   const playFocus = useTVFocusRef()
   const searchFocus = useTVFocusRef()
+  const prevFocus = useTVFocusRef()
+  const nextFocus = useTVFocusRef()
   const firstCardFocus = useTVFocusRef()
   const contentScrollRef = useRef<ComponentRef<typeof ScrollView>>(null)
   // 内容区实测高度（顶栏以下、上下页边距以内）。TV 屏高差异很大（720p/1080p/4K、
@@ -202,6 +206,7 @@ function TVHome({ componentId }: { componentId: string }) {
     paddingVertical: z(tvSize(14)),
   }), [z])
 
+  const hasMusic = !!musicInfo.id
   const heroTitle = musicInfo.name || tvText.livingRoom
   const heroSubtitle = musicInfo.id
     ? `${musicInfo.singer || tvText.unknownSinger}${dot}${isPlay ? tvText.playing : tvText.paused}`
@@ -210,9 +215,12 @@ function TVHome({ componentId }: { componentId: string }) {
   // 所以焦点链改为指向下方第一条推荐内容（firstCardFocus 由首张推荐卡同步）。
   const heroNextDownHandle = firstCardFocus.getNodeHandle()
 
+  const [showDownloadPanel, setShowDownloadPanel] = useState(false)
+
   return (
     <TVAppleScaffold image={musicInfo.pic}>
-      <TVTopTabs items={createTVTabs(componentId, 'home')} activeId="home" hasTVPreferredFocus nextFocusDown={playFocus.getNodeHandle() ?? undefined} activeTabRef={activeTabFocus as any} onActiveTabReady={queueFocusRefresh} />
+      <TVTopTabs items={createTVTabs(componentId, 'home')} activeId="home" hasTVPreferredFocus nextFocusDown={playFocus.getNodeHandle() ?? undefined} activeTabRef={activeTabFocus as any} onActiveTabReady={queueFocusRefresh} onDownloadPress={() => setShowDownloadPanel(true)} />
+      <TVDownloadPanel visible={showDownloadPanel} onClose={() => setShowDownloadPanel(false)} />
       <ScrollView ref={contentScrollRef} style={styles.contentScroll} showsVerticalScrollIndicator={false}>
         <View onLayout={event => { sectionOffsetRef.current.hero = event.nativeEvent.layout.y }}>
           <TVHeroShelf
@@ -226,8 +234,27 @@ function TVHome({ componentId }: { componentId: string }) {
             <TVButton ref={playFocus.ref as any} label={musicInfo.id ? '查看详情' : tvText.searchSong} tone="dark" style={heroButtonStyle} onFocus={() => { scrollToHero() }} onTVFocusChange={handleHeroFocusChange} onPress={() => {
               if (musicInfo.id) { pushTVPlayerScreen(componentId); return }
               pushTVSearchScreen(componentId)
-            }} nextFocusUp={getActiveTabHandle() ?? undefined} nextFocusRight={searchFocus.getNodeHandle() ?? undefined} nextFocusDown={heroNextDownHandle ?? undefined} />
-            <TVButton ref={searchFocus.ref as any} label={tvText.search} tone="dark" style={heroButtonStyle} onFocus={() => { scrollToHero() }} onTVFocusChange={handleHeroFocusChange} onPress={() => { pushTVSearchScreen(componentId) }} nextFocusUp={getActiveTabHandle() ?? undefined} nextFocusLeft={playFocus.getNodeHandle() ?? undefined} nextFocusDown={heroNextDownHandle ?? undefined} />
+            }} nextFocusUp={getActiveTabHandle() ?? undefined} nextFocusLeft={getActiveTabHandle() ?? undefined} nextFocusRight={searchFocus.getNodeHandle() ?? undefined} nextFocusDown={heroNextDownHandle ?? undefined} />
+            <TVButton ref={searchFocus.ref as any} label={tvText.search} tone="dark" style={heroButtonStyle} onFocus={() => { scrollToHero() }} onTVFocusChange={handleHeroFocusChange} onPress={() => { pushTVSearchScreen(componentId) }} nextFocusUp={getActiveTabHandle() ?? undefined} nextFocusLeft={playFocus.getNodeHandle() ?? undefined} nextFocusRight={hasMusic ? prevFocus.getNodeHandle() ?? undefined : undefined} nextFocusDown={heroNextDownHandle ?? undefined} />
+            {hasMusic ? (
+              <TVRoundControl ref={prevFocus.ref as any} label={tvText.controlPrev} iconName="prevMusic" size={z(tvSize(54))}
+                onPress={() => { if (musicInfo.id) void playPrev() }}
+                onFocus={() => { scrollToHero() }}
+                accessibilityLabel={tvText.controlPrev}
+                nextFocusUp={getActiveTabHandle() ?? undefined}
+                nextFocusLeft={searchFocus.getNodeHandle() ?? undefined}
+                nextFocusRight={nextFocus.getNodeHandle() ?? undefined}
+                nextFocusDown={heroNextDownHandle ?? undefined} />
+            ) : null}
+            {hasMusic ? (
+              <TVRoundControl ref={nextFocus.ref as any} label={tvText.controlNext} iconName="nextMusic" size={z(tvSize(54))}
+                onPress={() => { if (musicInfo.id) void playNext() }}
+                onFocus={() => { scrollToHero() }}
+                accessibilityLabel={tvText.controlNext}
+                nextFocusUp={getActiveTabHandle() ?? undefined}
+                nextFocusLeft={prevFocus.getNodeHandle() ?? undefined}
+                nextFocusDown={heroNextDownHandle ?? undefined} />
+            ) : null}
           </TVHeroShelf>
         </View>
 

@@ -2,6 +2,7 @@ import { memo, useEffect, useCallback, useMemo, useRef, useState, type Component
 import { FlatList, ScrollView, View, useWindowDimensions, findNodeHandle, type TextStyle, type ViewStyle } from 'react-native'
 import TVAppleScaffold from '@/components/TV/TVAppleScaffold'
 import TVTopTabs, { isTabFocusArrival } from '@/components/TV/TVTopTabs'
+import TVDownloadPanel from '@/components/TV/TVDownloadPanel'
 import TVText from '@/components/TV/TVText'
 import TVButton from '@/components/TV/TVButton'
 import TVFadeOverlay from '@/components/TV/TVFadeOverlay'
@@ -146,9 +147,12 @@ function TVHistory({ componentId }: { componentId: string }) {
     },
   })
 
+  const [showDownloadPanel, setShowDownloadPanel] = useState(false)
+
   return (
     <TVAppleScaffold image={currentMusicInfo.pic}>
-      <TVTopTabs items={createTVTabs(componentId, 'new')} activeId="new" nextFocusDown={getSourceHandle(sourceTabs[0]?.id) ?? firstBoardFocus.getNodeHandle() ?? undefined} activeTabRef={activeTabFocus as any} onActiveTabReady={queueFocusRefresh} />
+      <TVTopTabs items={createTVTabs(componentId, 'new')} activeId="new" nextFocusDown={getSourceHandle(sourceTabs[0]?.id) ?? firstBoardFocus.getNodeHandle() ?? undefined} activeTabRef={activeTabFocus as any} onActiveTabReady={queueFocusRefresh} onDownloadPress={() => setShowDownloadPanel(true)} />
+      <TVDownloadPanel visible={showDownloadPanel} onClose={() => setShowDownloadPanel(false)} />
       <View style={styles.root}>
         <View style={styles.header}>
           <TVText variant="pageTitle" style={[styles.title, { fontSize: z(tvTokens.heroTitle), lineHeight: z(tvFont(66)) }]}>{tvText.ranking}</TVText>

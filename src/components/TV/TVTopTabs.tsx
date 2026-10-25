@@ -1,9 +1,11 @@
-import { forwardRef, memo, useCallback, useContext, useEffect, useRef, type ComponentProps, type ComponentRef, type MutableRefObject } from 'react'
+import { forwardRef, memo, useCallback, useContext, useEffect, useRef, useState, type ComponentProps, type ComponentRef, type MutableRefObject } from 'react'
 import { View, findNodeHandle, type TextStyle, type ViewStyle } from 'react-native'
 import Focusable from './Focusable'
 import TVText from './TVText'
+import { Icon } from '@/components/common/Icon'
 import { blurActiveTVTarget, focusTVTargetByRef } from './tvFocusManager'
 import { getTVTabHost, getTVTabHostActiveId, subscribeTVTabHostActive, TVTabHostContext } from './tvTabHost'
+import { getDownloadList, onDownloadListUpdate } from '@/core/download'
 import { tvColors, tvSize, tvTokens } from '@/theme/tv'
 
 // 选中态用微信式绿色整块填充（老板 10-25 需求）；深色文字在 #07C160 上对比度最好
@@ -70,6 +72,8 @@ interface Props {
   nextFocusDown?: number
   activeTabRef?: MutableRefObject<ComponentRef<typeof Focusable> | null>
   onActiveTabReady?: () => void
+  /** 点击下载图标时的回调（如打开下载管理）；不传则仅作状态指示 */
+  onDownloadPress?: () => void
 }
 
 type TabButtonProps = ComponentProps<typeof Focusable> & {
@@ -109,7 +113,7 @@ const TabButton = forwardRef<any, TabButtonProps>(({ item, current, scheduleActi
 
 type TabNode = ComponentRef<typeof Focusable> | null
 
-const TVTopTabs = ({ items, activeId, subtitle, hasTVPreferredFocus, nextFocusDown, activeTabRef, onActiveTabReady }: Props) => {
+const TVTopTabs = ({ items, activeId, subtitle, hasTVPreferredFocus, nextFocusDown, activeTabRef, onActiveTabReady, onDownloadPress }: Props) => {
   // 连续左右切 tab 时合并切页：只切最后停留的那个，避免每次焦点移动都触发
   // 一次全局切页广播（所有 Focusable 重算焦点目标 + Shell 重渲染）而卡顿
   const activateTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -119,6 +123,16 @@ const TVTopTabs = ({ items, activeId, subtitle, hasTVPreferredFocus, nextFocusDo
   }, [])
   useEffect(() => () => { if (activateTimer.current) clearTimeout(activateTimer.current) }, [])
   const tabRefs = useRef<Record<string, TabNode>>({})
+  // 下载状态指示：有未完成任务（下载中/等待/暂停/出错）时，顶栏下载图标变绿高亮
+  const [hasDownloadTasks, setHasDownloadTasks] = useState(
+    () => getDownloadList().some(t => t.status !== 'completed'),
+  )
+  const downloadIconRef = useRef<TabNode>(null)
+  const [downloadHandle, setDownloadHandle] = useState<number | null>(null)
+  useEffect(() => {
+    const update = () => setHasDownloadTasks(getDownloadList().some(t => t.status !== 'completed'))
+    return onDownloadListUpdate(update)
+  }, [])
   // 已通知过 onActiveTabReady 的节点，用于去重。
   // 下面的 ref 是内联函数，React 每次提交都会先以 null、再以节点调用它；
   // 若无条件通知，onActiveTabReady（各屏传的都是 queueFocusRefresh）就会
@@ -230,10 +244,28 @@ const TVTopTabs = ({ items, activeId, subtitle, hasTVPreferredFocus, nextFocusDo
             scheduleActivate={scheduleActivate}
             hasTVPreferredFocus={hasTVPreferredFocus && index === activeIndex}
             nextFocusLeft={getHandle(index - 1) ?? undefined}
-            nextFocusRight={getHandle(index + 1) ?? undefined}
+            nextFocusRight={
+              index === items.length - 1
+                ? (downloadHandle ?? undefined)
+                : getHandle(index + 1) ?? undefined
+            }
             nextFocusDown={nextFocusDown}
           />
         ))}
+        <Focusable
+          ref={(node: TabNode) => {
+            downloadIconRef.current = node
+            setDownloadHandle(node ? findNodeHandle(node) : null)
+          }}
+          style={[styles.downloadIcon, hasDownloadTasks && styles.downloadIconActive]}
+          focusStyle={styles.downloadIconFocus}
+          onPress={onDownloadPress}
+          nextFocusLeft={getHandle(items.length - 1) ?? undefined}
+          nextFocusRight={undefined}
+          nextFocusDown={nextFocusDown}
+        >
+          <Icon name="download-2" rawSize={tvTokens.nav} color={hasDownloadTasks ? tvColors.focus : tvColors.subtext} />
+        </Focusable>
       </View>
     </View>
   )
@@ -294,6 +326,25 @@ const styles: Record<string, ViewStyle | TextStyle> = {
   tabTextActive: {
     color: tvColors.bgDeep,
     fontWeight: '800',
+  },
+  downloadIcon: {
+    width: tvSize(48),
+    height: tvSize(48),
+    borderRadius: tvSize(10),
+    marginLeft: tvSize(12),
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // 有下载任务：绿色高亮（与全局焦点绿一致），提示进行中
+  downloadIconActive: {
+    backgroundColor: 'rgba(11,216,116,0.16)',
+  },
+  downloadIconFocus: {
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderColor: tvColors.focus,
+    borderWidth: 2,
+    shadowColor: tvColors.focus,
+    shadowOpacity: 0.5,
   },
 }
 

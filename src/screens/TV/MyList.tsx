@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type Component
 import { ScrollView, View, useWindowDimensions, findNodeHandle, type TextStyle, type ViewStyle } from 'react-native'
 import TVAppleScaffold from '@/components/TV/TVAppleScaffold'
 import TVTopTabs from '@/components/TV/TVTopTabs'
+import TVDownloadPanel from '@/components/TV/TVDownloadPanel'
 import TVText from '@/components/TV/TVText'
 import TVPosterCard from '@/components/TV/TVPosterCard'
 import Focusable from '@/components/TV/Focusable'
@@ -217,9 +218,12 @@ function TVMyList({ componentId }: { componentId: string }) {
 
   const hasLists = userSonglists.length > 0
 
+  const [showDownloadPanel, setShowDownloadPanel] = useState(false)
+
   return (
     <TVAppleScaffold image={musicInfo.pic}>
-      <TVTopTabs items={createTVTabs(componentId, 'mylist')} activeId="mylist" hasTVPreferredFocus nextFocusDown={firstCardFocus.getNodeHandle() ?? undefined} activeTabRef={activeTabFocus} onActiveTabReady={listRefresh} />
+      <TVTopTabs items={createTVTabs(componentId, 'mylist')} activeId="mylist" hasTVPreferredFocus nextFocusDown={firstCardFocus.getNodeHandle() ?? undefined} activeTabRef={activeTabFocus} onActiveTabReady={listRefresh} onDownloadPress={() => setShowDownloadPanel(true)} />
+      <TVDownloadPanel visible={showDownloadPanel} onClose={() => setShowDownloadPanel(false)} />
       {/* 聚焦即滚动：ScrollView 记录滚动位移 / 可视高度，卡片获焦时把它所在的【整排】滚进视野（见上方 revealCardRow） */}
       <ScrollView
         ref={contentScrollRef}
