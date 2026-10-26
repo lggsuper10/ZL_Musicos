@@ -60,7 +60,6 @@ function TVDetail({ componentId, payload }: Props) {
   const playAllFocus = useTVFocusRef()
   const backFocus = useTVFocusRef()
   const downloadAllFocus = useTVFocusRef()
-  const downloadManageFocus = useTVFocusRef()
   const firstRowFocus = useTVFocusRef()
   const retryFocus = useTVFocusRef()
   const loadMoreFocus = useTVFocusRef()
@@ -304,7 +303,7 @@ function TVDetail({ componentId, payload }: Props) {
                 onBlur={handleActionBlur}
                 hasTVPreferredFocus
                 nextFocusUp={getActiveTabHandle() ?? undefined}
-                nextFocusRight={isLocalSongsList ? downloadManageFocus.getNodeHandle() ?? undefined : downloadAllFocus.getNodeHandle() ?? undefined}
+                nextFocusRight={isLocalSongsList ? backFocus.getNodeHandle() ?? undefined : downloadAllFocus.getNodeHandle() ?? undefined}
                 nextFocusDown={firstRowFocus.getNodeHandle() ?? undefined}
               />
               {!isLocalSongsList ? (
@@ -325,23 +324,10 @@ function TVDetail({ componentId, payload }: Props) {
                   onBlur={handleActionBlur}
                   nextFocusUp={getActiveTabHandle() ?? undefined}
                   nextFocusLeft={playAllFocus.getNodeHandle() ?? undefined}
-                  nextFocusRight={downloadManageFocus.getNodeHandle() ?? undefined}
+                  nextFocusRight={backFocus.getNodeHandle() ?? undefined}
                   nextFocusDown={firstRowFocus.getNodeHandle() ?? undefined}
                 />
               ) : null}
-              <TVButton
-                ref={downloadManageFocus.ref as any}
-                label={tvText.downloadManage}
-                tone="dark"
-                style={styles.actionButton}
-                onPress={() => { setShowDownloadPanel(true) }}
-                onFocus={handleActionFocus}
-                onBlur={handleActionBlur}
-                nextFocusUp={getActiveTabHandle() ?? undefined}
-                nextFocusLeft={isLocalSongsList ? playAllFocus.getNodeHandle() ?? undefined : downloadAllFocus.getNodeHandle() ?? undefined}
-                nextFocusRight={backFocus.getNodeHandle() ?? undefined}
-                nextFocusDown={firstRowFocus.getNodeHandle() ?? undefined}
-              />
               <TVButton
                 ref={backFocus.ref as any}
                 label={tvText.back}
@@ -351,7 +337,7 @@ function TVDetail({ componentId, payload }: Props) {
                 onFocus={handleActionFocus}
                 onBlur={handleActionBlur}
                 nextFocusUp={getActiveTabHandle() ?? undefined}
-                nextFocusLeft={downloadManageFocus.getNodeHandle() ?? undefined}
+                nextFocusLeft={isLocalSongsList ? playAllFocus.getNodeHandle() ?? undefined : downloadAllFocus.getNodeHandle() ?? undefined}
                 nextFocusRight={firstRowFocus.getNodeHandle() ?? undefined}
                 nextFocusDown={firstRowFocus.getNodeHandle() ?? undefined}
               />

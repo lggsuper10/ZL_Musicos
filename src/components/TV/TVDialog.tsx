@@ -176,8 +176,9 @@ const styles: Record<string, ViewStyle | TextStyle> = {
     backgroundColor: 'rgba(2,3,8,0.72)',
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 999,
-    elevation: 24,
+    // 弹窗必须永远是最高层：要盖住下载管理面板等全屏覆盖层（面板 zIndex 40）。
+    zIndex: 100000,
+    elevation: 64,
   },
   card: {
     width: tvSize(620),
